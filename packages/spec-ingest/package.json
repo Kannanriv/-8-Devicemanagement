@@ -1,0 +1,16 @@
+{
+  "name": "@hash8/spec-ingest",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Parses OEM Excel message specs into source-traced draft DCS documents.",
+  "license": "Apache-2.0",
+  "exports": { ".": "./src/index.ts" },
+  "types": "./src/index.ts",
+  "scripts": {
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {"@hash8/dcs-schema":"*","exceljs":"^4.4.0"},
+  "devDependencies": {}
+}

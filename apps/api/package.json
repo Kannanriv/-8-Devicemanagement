@@ -1,0 +1,18 @@
+{
+  "name": "@hash8/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Platform API, ingestion adapters, decoder pipeline, OTA engine (dev mode: zero-infra).",
+  "license": "Apache-2.0",
+  "exports": { ".": "./src/index.ts" },
+  "types": "./src/index.ts",
+  "scripts": {
+    "test": "vitest run --passWithNoTests",
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {"@hash8/dcs-schema":"*","@hash8/codec-runtime":"*","@hash8/codec-compiler":"*","@hash8/spec-ingest":"*","@hash8/agents":"*","@hash8/ops-engine":"*","@hash8/sdk-ts":"*","fastify":"^5.4.0","@fastify/cors":"^11.0.0","@fastify/multipart":"^9.0.0","@fastify/websocket":"^11.0.0","@electric-sql/pglite":"^0.3.0","aedes":"^0.51.0","mqtt":"^5.10.0","pino":"^9.6.0","zod":"^3.25.0"},
+  "devDependencies": {"pino-pretty":"^13.0.0"}
+}

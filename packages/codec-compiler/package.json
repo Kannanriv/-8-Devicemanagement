@@ -1,0 +1,16 @@
+{
+  "name": "@hash8/codec-compiler",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Generates decoder plugins/SDKs (TS/TS013, Python, Go, Java, C) from a DCS.",
+  "license": "Apache-2.0",
+  "exports": { ".": "./src/index.ts" },
+  "types": "./src/index.ts",
+  "scripts": {
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {"@hash8/dcs-schema":"*","jszip":"^3.10.1"},
+  "devDependencies": {"@hash8/codec-runtime":"*"}
+}

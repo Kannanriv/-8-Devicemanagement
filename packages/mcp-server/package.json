@@ -1,0 +1,16 @@
+{
+  "name": "@hash8/mcp-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "MCP server exposing fleet, codec and OTA operations to AI agents.",
+  "license": "Apache-2.0",
+  "exports": { ".": "./src/index.ts" },
+  "types": "./src/index.ts",
+  "scripts": {
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {"@hash8/sdk-ts":"*","@modelcontextprotocol/sdk":"latest","zod":"^3.25.0"},
+  "devDependencies": {}
+}

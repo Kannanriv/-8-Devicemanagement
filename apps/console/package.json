@@ -1,0 +1,37 @@
+{
+  "name": "@hash8/console",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "#8 Device Management operations console (Next.js).",
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@hash8/dcs-schema": "*",
+    "@hash8/sdk-ts": "*",
+    "@tanstack/react-query": "^5.85.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "cmdk": "^1.1.1",
+    "echarts": "^5.6.0",
+    "lucide-react": "^0.540.0",
+    "motion": "^12.23.0",
+    "next": "^15.5.0",
+    "radix-ui": "^1.4.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "sonner": "^2.0.0",
+    "tailwind-merge": "^3.3.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "tailwindcss": "^4.1.0"
+  }
+}

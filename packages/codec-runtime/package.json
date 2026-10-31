@@ -1,0 +1,16 @@
+{
+  "name": "@hash8/codec-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Bidirectional DCS interpreter: decode uplinks, encode downlinks, run test vectors.",
+  "license": "Apache-2.0",
+  "exports": { ".": "./src/index.ts" },
+  "types": "./src/index.ts",
+  "scripts": {
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {"@hash8/dcs-schema":"*"},
+  "devDependencies": {}
+}

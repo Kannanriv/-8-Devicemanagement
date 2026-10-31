@@ -1,0 +1,25 @@
+{
+  "name": "hash8-dm",
+  "private": true,
+  "version": "0.1.0",
+  "description": "#8 Device Management — operations-driven IoT device management: spec-to-codec, decoding, plugins, provisioning, OTA.",
+  "workspaces": ["packages/*", "apps/*", "tools/*"],
+  "scripts": {
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "dev": "turbo run dev --parallel",
+    "dev:api": "npm run dev -w @hash8/api",
+    "dev:console": "npm run dev -w @hash8/console",
+    "simulate": "npm run start -w @hash8/simulator"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.20.0",
+    "turbo": "^2.5.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.0"
+  },
+  "packageManager": "npm@11.12.1",
+  "engines": { "node": ">=22" }
+}
