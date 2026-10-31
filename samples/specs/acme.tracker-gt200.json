@@ -1,0 +1,747 @@
+{
+  "dcs": "1.0",
+  "id": "acme.tracker-gt200",
+  "version": "2.3.0",
+  "device": {
+    "vendor": "Acme",
+    "model": "GT200",
+    "description": "Acme GT200 4G/NB-IoT GPS asset tracker with ignition sense and tamper switch.",
+    "firmware": ">=2.0.0 <3.0.0",
+    "protocols": [
+      "mqtt",
+      "nbiot"
+    ],
+    "category": "tracker"
+  },
+  "defaults": {
+    "endian": "big"
+  },
+  "uplink": [
+    {
+      "name": "report",
+      "description": "All device-originated frames: A5 | msgType | body | CRC16.",
+      "when": {
+        "topic": "acme/gt200/+/up"
+      },
+      "source": {
+        "file": "GT200_Protocol_v2.3.xlsx",
+        "sheet": "Uplink",
+        "cell": "A3",
+        "row": 3
+      },
+      "fields": [
+        {
+          "kind": "const",
+          "name": "magic",
+          "bits": 8,
+          "value": 165,
+          "description": "Frame start marker 0xA5",
+          "source": {
+            "file": "GT200_Protocol_v2.3.xlsx",
+            "sheet": "Uplink",
+            "cell": "B5",
+            "row": 5
+          }
+        },
+        {
+          "name": "msgType",
+          "type": "uint",
+          "bits": 8,
+          "enum": {
+            "1": "location",
+            "2": "heartbeat",
+            "3": "alarm"
+          },
+          "description": "Frame type",
+          "source": {
+            "file": "GT200_Protocol_v2.3.xlsx",
+            "sheet": "Uplink",
+            "cell": "B6",
+            "row": 6
+          }
+        },
+        {
+          "kind": "switch",
+          "name": "body",
+          "on": "msgType",
+          "description": "Body selected by msgType",
+          "source": {
+            "file": "GT200_Protocol_v2.3.xlsx",
+            "sheet": "Uplink",
+            "cell": "A8",
+            "row": 8
+          },
+          "cases": {
+            "0x01": [
+              {
+                "name": "lat",
+                "type": "int",
+                "bits": 32,
+                "scale": 1e-07,
+                "decimals": 7,
+                "unit": "deg",
+                "min": -90,
+                "max": 90,
+                "description": "Latitude, WGS-84, 1e-7 degree resolution",
+                "semantic": "lwm2m:6/0",
+                "source": {
+                  "file": "GT200_Protocol_v2.3.xlsx",
+                  "sheet": "Uplink",
+                  "cell": "B10",
+                  "row": 10
+                }
+              },
+              {
+                "name": "lng",
+                "type": "int",
+                "bits": 32,
+                "scale": 1e-07,
+                "decimals": 7,
+                "unit": "deg",
+                "min": -180,
+                "max": 180,
+                "description": "Longitude, WGS-84, 1e-7 degree resolution",
+                "semantic": "lwm2m:6/1",
+                "source": {
+                  "file": "GT200_Protocol_v2.3.xlsx",
+                  "sheet": "Uplink",
+                  "cell": "B11",
+                  "row": 11
+                }
+              },
+              {
+                "name": "speed",
+                "type": "uint",
+                "bits": 16,
+                "scale": 0.1,
+                "unit": "km/h",
+                "max": 300,
+                "description": "Ground speed",
+                "source": {
+                  "file": "GT200_Protocol_v2.3.xlsx",
+                  "sheet": "Uplink",
+                  "cell": "B12",
+                  "row": 12
+                }
+              },
+              {
+                "name": "heading",
+                "type": "uint",
+                "bits": 16,
+                "unit": "deg",
+                "max": 359,
+                "description": "Course over ground, 0 = north",
+                "source": {
+                  "file": "GT200_Protocol_v2.3.xlsx",
+                  "sheet": "Uplink",
+                  "cell": "B13",
+                  "row": 13
+                }
+              },
+              {
+                "name": "satellites",
+                "type": "uint",
+                "bits": 8,
+                "description": "Satellites used in fix",
+                "source": {
+                  "file": "GT200_Protocol_v2.3.xlsx",
+                  "sheet": "Uplink",
+                  "cell": "B14",
+                  "row": 14
+                }
+              },
+              {
+                "kind": "group",
+                "name": "flags",
+                "description": "Status bitfield (bit7..bit0)",
+                "source": {
+                  "file": "GT200_Protocol_v2.3.xlsx",
+                  "sheet": "Uplink",
+                  "cell": "B15",
+                  "row": 15
+                },
+                "fields": [
+                  {
+                    "name": "ignition",
+                    "type": "bool",
+                    "bits": 1,
+                    "description": "Ignition input active (bit 7)",
+                    "source": {
+                      "file": "GT200_Protocol_v2.3.xlsx",
+                      "sheet": "Uplink",
+                      "cell": "C16",
+                      "row": 16
+                    }
+                  },
+                  {
+                    "name": "moving",
+                    "type": "bool",
+                    "bits": 1,
+                    "description": "Accelerometer motion detected (bit 6)",
+                    "source": {
+                      "file": "GT200_Protocol_v2.3.xlsx",
+                      "sheet": "Uplink",
+                      "cell": "C17",
+                      "row": 17
+                    }
+                  },
+                  {
+                    "name": "gpsFix",
+                    "type": "bool",
+                    "bits": 1,
+                    "description": "Valid GNSS fix (bit 5)",
+                    "source": {
+                      "file": "GT200_Protocol_v2.3.xlsx",
+                      "sheet": "Uplink",
+                      "cell": "C18",
+                      "row": 18
+                    }
+                  },
+                  {
+                    "name": "reserved",
+                    "type": "uint",
+                    "bits": 5,
+                    "hidden": true,
+                    "description": "Reserved, always 0",
+                    "source": {
+                      "file": "GT200_Protocol_v2.3.xlsx",
+                      "sheet": "Uplink",
+                      "cell": "C19",
+                      "row": 19
+                    }
+                  }
+                ]
+              }
+            ],
+            "0x02": [
+              {
+                "name": "battery",
+                "type": "uint",
+                "bits": 16,
+                "unit": "mV",
+                "min": 3300,
+                "max": 4300,
+                "description": "Battery voltage",
+                "semantic": "lwm2m:3/7",
+                "source": {
+                  "file": "GT200_Protocol_v2.3.xlsx",
+                  "sheet": "Uplink",
+                  "cell": "B22",
+                  "row": 22
+                }
+              },
+              {
+                "name": "signal",
+                "type": "int",
+                "bits": 8,
+                "unit": "dB[mW]",
+                "min": -140,
+                "max": -40,
+                "description": "Cellular RSSI",
+                "source": {
+                  "file": "GT200_Protocol_v2.3.xlsx",
+                  "sheet": "Uplink",
+                  "cell": "B23",
+                  "row": 23
+                }
+              },
+              {
+                "name": "temperature",
+                "type": "int",
+                "bits": 16,
+                "scale": 0.1,
+                "unit": "Cel",
+                "description": "Internal temperature",
+                "semantic": "lwm2m:3303/5700",
+                "source": {
+                  "file": "GT200_Protocol_v2.3.xlsx",
+                  "sheet": "Uplink",
+                  "cell": "B24",
+                  "row": 24
+                }
+              },
+              {
+                "kind": "group",
+                "name": "firmware",
+                "description": "Firmware version major.minor.patch",
+                "source": {
+                  "file": "GT200_Protocol_v2.3.xlsx",
+                  "sheet": "Uplink",
+                  "cell": "B25",
+                  "row": 25
+                },
+                "fields": [
+                  {
+                    "name": "major",
+                    "type": "uint",
+                    "bits": 8,
+                    "source": {
+                      "file": "GT200_Protocol_v2.3.xlsx",
+                      "sheet": "Uplink",
+                      "cell": "C25",
+                      "row": 25
+                    }
+                  },
+                  {
+                    "name": "minor",
+                    "type": "uint",
+                    "bits": 8,
+                    "source": {
+                      "file": "GT200_Protocol_v2.3.xlsx",
+                      "sheet": "Uplink",
+                      "cell": "D25",
+                      "row": 25
+                    }
+                  },
+                  {
+                    "name": "patch",
+                    "type": "uint",
+                    "bits": 8,
+                    "source": {
+                      "file": "GT200_Protocol_v2.3.xlsx",
+                      "sheet": "Uplink",
+                      "cell": "E25",
+                      "row": 25
+                    }
+                  }
+                ]
+              }
+            ],
+            "0x03": [
+              {
+                "name": "alarmType",
+                "type": "uint",
+                "bits": 8,
+                "description": "Alarm cause",
+                "enum": {
+                  "1": "sos",
+                  "2": "tamper",
+                  "3": "low_battery",
+                  "4": "geofence_exit",
+                  "5": "harsh_braking"
+                },
+                "source": {
+                  "file": "GT200_Protocol_v2.3.xlsx",
+                  "sheet": "Uplink",
+                  "cell": "B28",
+                  "row": 28
+                }
+              },
+              {
+                "name": "lat",
+                "type": "int",
+                "bits": 32,
+                "scale": 1e-07,
+                "decimals": 7,
+                "unit": "deg",
+                "min": -90,
+                "max": 90,
+                "description": "Latitude, WGS-84, 1e-7 degree resolution",
+                "semantic": "lwm2m:6/0",
+                "source": {
+                  "file": "GT200_Protocol_v2.3.xlsx",
+                  "sheet": "Uplink",
+                  "cell": "B29",
+                  "row": 29
+                }
+              },
+              {
+                "name": "lng",
+                "type": "int",
+                "bits": 32,
+                "scale": 1e-07,
+                "decimals": 7,
+                "unit": "deg",
+                "min": -180,
+                "max": 180,
+                "description": "Longitude, WGS-84, 1e-7 degree resolution",
+                "semantic": "lwm2m:6/1",
+                "source": {
+                  "file": "GT200_Protocol_v2.3.xlsx",
+                  "sheet": "Uplink",
+                  "cell": "B30",
+                  "row": 30
+                }
+              }
+            ]
+          }
+        },
+        {
+          "kind": "checksum",
+          "name": "crc",
+          "algo": "crc16-ccitt",
+          "description": "CRC-16/CCITT-FALSE over all preceding bytes",
+          "source": {
+            "file": "GT200_Protocol_v2.3.xlsx",
+            "sheet": "Uplink",
+            "cell": "B32",
+            "row": 32
+          }
+        }
+      ]
+    }
+  ],
+  "downlink": [
+    {
+      "name": "set_interval",
+      "description": "Set reporting interval",
+      "when": {
+        "topic": "acme/gt200/+/down"
+      },
+      "source": {
+        "file": "GT200_Protocol_v2.3.xlsx",
+        "sheet": "Downlink",
+        "cell": "A3",
+        "row": 3
+      },
+      "fields": [
+        {
+          "kind": "const",
+          "name": "magic",
+          "bits": 8,
+          "value": 165,
+          "description": "Frame start marker 0xA5",
+          "source": {
+            "file": "GT200_Protocol_v2.3.xlsx",
+            "sheet": "Downlink",
+            "cell": "B4",
+            "row": 4
+          }
+        },
+        {
+          "kind": "const",
+          "name": "cmd",
+          "bits": 8,
+          "value": 16,
+          "description": "Command 0x10",
+          "source": {
+            "file": "GT200_Protocol_v2.3.xlsx",
+            "sheet": "Downlink",
+            "cell": "B5",
+            "row": 5
+          }
+        },
+        {
+          "name": "interval",
+          "type": "uint",
+          "bits": 16,
+          "unit": "s",
+          "min": 10,
+          "max": 86400,
+          "default": 300,
+          "description": "Reporting interval",
+          "source": {
+            "file": "GT200_Protocol_v2.3.xlsx",
+            "sheet": "Downlink",
+            "cell": "B6",
+            "row": 6
+          }
+        },
+        {
+          "kind": "checksum",
+          "name": "crc",
+          "algo": "crc16-ccitt",
+          "description": "CRC-16/CCITT-FALSE over all preceding bytes",
+          "source": {
+            "file": "GT200_Protocol_v2.3.xlsx",
+            "sheet": "Downlink",
+            "cell": "B7",
+            "row": 7
+          }
+        }
+      ]
+    },
+    {
+      "name": "reboot",
+      "description": "Reboot the device",
+      "when": {
+        "topic": "acme/gt200/+/down"
+      },
+      "source": {
+        "file": "GT200_Protocol_v2.3.xlsx",
+        "sheet": "Downlink",
+        "cell": "A9",
+        "row": 9
+      },
+      "fields": [
+        {
+          "kind": "const",
+          "name": "magic",
+          "bits": 8,
+          "value": 165,
+          "description": "Frame start marker 0xA5",
+          "source": {
+            "file": "GT200_Protocol_v2.3.xlsx",
+            "sheet": "Downlink",
+            "cell": "B10",
+            "row": 10
+          }
+        },
+        {
+          "kind": "const",
+          "name": "cmd",
+          "bits": 8,
+          "value": 17,
+          "description": "Command 0x11",
+          "source": {
+            "file": "GT200_Protocol_v2.3.xlsx",
+            "sheet": "Downlink",
+            "cell": "B11",
+            "row": 11
+          }
+        },
+        {
+          "kind": "checksum",
+          "name": "crc",
+          "algo": "crc16-ccitt",
+          "description": "CRC-16/CCITT-FALSE over all preceding bytes",
+          "source": {
+            "file": "GT200_Protocol_v2.3.xlsx",
+            "sheet": "Downlink",
+            "cell": "B12",
+            "row": 12
+          }
+        }
+      ]
+    },
+    {
+      "name": "set_geofence",
+      "description": "Configure circular geofence",
+      "when": {
+        "topic": "acme/gt200/+/down"
+      },
+      "source": {
+        "file": "GT200_Protocol_v2.3.xlsx",
+        "sheet": "Downlink",
+        "cell": "A14",
+        "row": 14
+      },
+      "fields": [
+        {
+          "kind": "const",
+          "name": "magic",
+          "bits": 8,
+          "value": 165,
+          "description": "Frame start marker 0xA5",
+          "source": {
+            "file": "GT200_Protocol_v2.3.xlsx",
+            "sheet": "Downlink",
+            "cell": "B15",
+            "row": 15
+          }
+        },
+        {
+          "kind": "const",
+          "name": "cmd",
+          "bits": 8,
+          "value": 18,
+          "description": "Command 0x12",
+          "source": {
+            "file": "GT200_Protocol_v2.3.xlsx",
+            "sheet": "Downlink",
+            "cell": "B16",
+            "row": 16
+          }
+        },
+        {
+          "name": "lat",
+          "type": "int",
+          "bits": 32,
+          "scale": 1e-07,
+          "decimals": 7,
+          "unit": "deg",
+          "min": -90,
+          "max": 90,
+          "description": "Latitude, WGS-84, 1e-7 degree resolution",
+          "semantic": "lwm2m:6/0",
+          "source": {
+            "file": "GT200_Protocol_v2.3.xlsx",
+            "sheet": "Downlink",
+            "cell": "B17",
+            "row": 17
+          }
+        },
+        {
+          "name": "lng",
+          "type": "int",
+          "bits": 32,
+          "scale": 1e-07,
+          "decimals": 7,
+          "unit": "deg",
+          "min": -180,
+          "max": 180,
+          "description": "Longitude, WGS-84, 1e-7 degree resolution",
+          "semantic": "lwm2m:6/1",
+          "source": {
+            "file": "GT200_Protocol_v2.3.xlsx",
+            "sheet": "Downlink",
+            "cell": "B18",
+            "row": 18
+          }
+        },
+        {
+          "name": "radius",
+          "type": "uint",
+          "bits": 16,
+          "unit": "m",
+          "min": 50,
+          "description": "Geofence radius",
+          "source": {
+            "file": "GT200_Protocol_v2.3.xlsx",
+            "sheet": "Downlink",
+            "cell": "B19",
+            "row": 19
+          }
+        },
+        {
+          "kind": "checksum",
+          "name": "crc",
+          "algo": "crc16-ccitt",
+          "description": "CRC-16/CCITT-FALSE over all preceding bytes",
+          "source": {
+            "file": "GT200_Protocol_v2.3.xlsx",
+            "sheet": "Downlink",
+            "cell": "B20",
+            "row": 20
+          }
+        }
+      ]
+    }
+  ],
+  "meta": {
+    "createdBy": "seed",
+    "sourceDocument": "GT200_Protocol_v2.3.xlsx",
+    "license": "Apache-2.0",
+    "changelog": [
+      "2.3.0: added harsh_braking alarm"
+    ]
+  },
+  "vectors": [
+    {
+      "name": "location – driving, fix",
+      "topic": "acme/gt200/860123456789012/up",
+      "message": "report",
+      "hex": "a50107bb4f132e3ffd9b01c4010e09e00e72",
+      "data": {
+        "msgType": "location",
+        "lat": 12.9715987,
+        "lng": 77.5945627,
+        "speed": 45.2,
+        "heading": 270,
+        "satellites": 9,
+        "flags": {
+          "ignition": true,
+          "moving": true,
+          "gpsFix": true
+        }
+      }
+    },
+    {
+      "name": "location – parked southern/western hemisphere, no fix",
+      "topic": "acme/gt200/860123456789012/up",
+      "message": "report",
+      "hex": "a501ebd0073ba5df4ae5000000000000c37f",
+      "data": {
+        "msgType": "location",
+        "lat": -33.8688197,
+        "lng": -151.2092955,
+        "speed": 0,
+        "heading": 0,
+        "satellites": 0,
+        "flags": {
+          "ignition": false,
+          "moving": false,
+          "gpsFix": false
+        }
+      }
+    },
+    {
+      "name": "heartbeat",
+      "topic": "acme/gt200/860123456789012/up",
+      "message": "report",
+      "hex": "a5020f48a900ea020104f7ca",
+      "data": {
+        "msgType": "heartbeat",
+        "battery": 3912,
+        "signal": -87,
+        "temperature": 23.4,
+        "firmware": {
+          "major": 2,
+          "minor": 1,
+          "patch": 4
+        }
+      }
+    },
+    {
+      "name": "heartbeat – sub-zero",
+      "topic": "acme/gt200/860123456789012/up",
+      "message": "report",
+      "hex": "a5020e429bffc90203003740",
+      "data": {
+        "msgType": "heartbeat",
+        "battery": 3650,
+        "signal": -101,
+        "temperature": -5.5,
+        "firmware": {
+          "major": 2,
+          "minor": 3,
+          "patch": 0
+        }
+      }
+    },
+    {
+      "name": "alarm – SOS",
+      "topic": "acme/gt200/860123456789012/up",
+      "message": "report",
+      "hex": "a503011eb2633cffecfbd2b9c5",
+      "data": {
+        "msgType": "alarm",
+        "alarmType": "sos",
+        "lat": 51.5007292,
+        "lng": -0.1246254
+      }
+    },
+    {
+      "name": "alarm – geofence exit",
+      "topic": "acme/gt200/860123456789012/up",
+      "message": "report",
+      "hex": "a503041840afced3ddb4b454c4",
+      "data": {
+        "msgType": "alarm",
+        "alarmType": "geofence_exit",
+        "lat": 40.6892494,
+        "lng": -74.0445004
+      }
+    },
+    {
+      "name": "set_interval 60 s",
+      "direction": "downlink",
+      "topic": "acme/gt200/860123456789012/down",
+      "message": "set_interval",
+      "hex": "a510003c664f",
+      "data": {
+        "interval": 60
+      }
+    },
+    {
+      "name": "reboot",
+      "direction": "downlink",
+      "topic": "acme/gt200/860123456789012/down",
+      "message": "reboot",
+      "hex": "a511fd94",
+      "data": {}
+    },
+    {
+      "name": "set_geofence 500 m",
+      "direction": "downlink",
+      "topic": "acme/gt200/860123456789012/down",
+      "message": "set_geofence",
+      "hex": "a51207bb4f132e3ffd9b01f446d8",
+      "data": {
+        "lat": 12.9715987,
+        "lng": 77.5945627,
+        "radius": 500
+      }
+    }
+  ]
+}

@@ -1,0 +1,580 @@
+{
+  "dcs": "1.0",
+  "id": "voltix.energy-em3",
+  "version": "1.4.0",
+  "device": {
+    "vendor": "Voltix",
+    "model": "EM3",
+    "description": "Voltix EM3 DIN-rail three-phase energy meter with latching relay, MQTT over Ethernet/LTE-M.",
+    "firmware": ">=1.2.0",
+    "protocols": [
+      "mqtt"
+    ],
+    "category": "energy-meter"
+  },
+  "defaults": {
+    "endian": "little"
+  },
+  "uplink": [
+    {
+      "name": "realtime",
+      "description": "Instantaneous per-phase measurements, published every 60 s.",
+      "when": {
+        "port": 1,
+        "topic": "voltix/em3/+/realtime"
+      },
+      "source": {
+        "file": "Voltix_EM3_MQTT_Register_Map_r5.xlsx",
+        "sheet": "Realtime",
+        "cell": "A2",
+        "row": 2
+      },
+      "fields": [
+        {
+          "name": "meterId",
+          "type": "bytes",
+          "length": 4,
+          "description": "Meter serial (4 bytes, hex)",
+          "source": {
+            "file": "Voltix_EM3_MQTT_Register_Map_r5.xlsx",
+            "sheet": "Realtime",
+            "cell": "C4",
+            "row": 4
+          }
+        },
+        {
+          "kind": "repeat",
+          "name": "phases",
+          "count": 3,
+          "description": "L1, L2, L3",
+          "source": {
+            "file": "Voltix_EM3_MQTT_Register_Map_r5.xlsx",
+            "sheet": "Realtime",
+            "cell": "A6",
+            "row": 6
+          },
+          "fields": [
+            {
+              "name": "voltage",
+              "type": "uint",
+              "bits": 16,
+              "scale": 0.1,
+              "unit": "V",
+              "min": 0,
+              "max": 300,
+              "description": "RMS phase-neutral voltage",
+              "semantic": "lwm2m:3316/5700",
+              "source": {
+                "file": "Voltix_EM3_MQTT_Register_Map_r5.xlsx",
+                "sheet": "Realtime",
+                "cell": "C7",
+                "row": 7
+              }
+            },
+            {
+              "name": "current",
+              "type": "uint",
+              "bits": 16,
+              "scale": 0.01,
+              "unit": "A",
+              "max": 100,
+              "description": "RMS current",
+              "semantic": "lwm2m:3317/5700",
+              "source": {
+                "file": "Voltix_EM3_MQTT_Register_Map_r5.xlsx",
+                "sheet": "Realtime",
+                "cell": "C8",
+                "row": 8
+              }
+            },
+            {
+              "name": "power",
+              "type": "int",
+              "bits": 32,
+              "unit": "W",
+              "description": "Active power (negative = export)",
+              "semantic": "lwm2m:3328/5700",
+              "source": {
+                "file": "Voltix_EM3_MQTT_Register_Map_r5.xlsx",
+                "sheet": "Realtime",
+                "cell": "C9",
+                "row": 9
+              }
+            },
+            {
+              "name": "pf",
+              "type": "int",
+              "bits": 8,
+              "scale": 0.01,
+              "min": -1,
+              "max": 1,
+              "description": "Power factor",
+              "source": {
+                "file": "Voltix_EM3_MQTT_Register_Map_r5.xlsx",
+                "sheet": "Realtime",
+                "cell": "C10",
+                "row": 10
+              }
+            }
+          ]
+        },
+        {
+          "name": "totalEnergy",
+          "type": "uint",
+          "bits": 32,
+          "scale": 0.01,
+          "unit": "kW.h",
+          "description": "Total imported active energy",
+          "semantic": "lwm2m:3331/5805",
+          "source": {
+            "file": "Voltix_EM3_MQTT_Register_Map_r5.xlsx",
+            "sheet": "Realtime",
+            "cell": "C12",
+            "row": 12
+          }
+        },
+        {
+          "name": "frequency",
+          "type": "uint",
+          "bits": 16,
+          "scale": 0.01,
+          "unit": "Hz",
+          "min": 45,
+          "max": 65,
+          "description": "Grid frequency",
+          "source": {
+            "file": "Voltix_EM3_MQTT_Register_Map_r5.xlsx",
+            "sheet": "Realtime",
+            "cell": "C13",
+            "row": 13
+          }
+        },
+        {
+          "name": "alarm",
+          "type": "uint",
+          "bits": 8,
+          "description": "Active alarm",
+          "enum": {
+            "0": "none",
+            "1": "overvoltage",
+            "2": "undervoltage",
+            "3": "overcurrent",
+            "4": "phase_loss",
+            "5": "tamper"
+          },
+          "source": {
+            "file": "Voltix_EM3_MQTT_Register_Map_r5.xlsx",
+            "sheet": "Realtime",
+            "cell": "C14",
+            "row": 14
+          }
+        },
+        {
+          "kind": "checksum",
+          "name": "crc",
+          "algo": "crc16-modbus",
+          "description": "CRC-16/MODBUS, low byte first",
+          "source": {
+            "file": "Voltix_EM3_MQTT_Register_Map_r5.xlsx",
+            "sheet": "Realtime",
+            "cell": "C15",
+            "row": 15
+          }
+        }
+      ]
+    },
+    {
+      "name": "daily_summary",
+      "description": "Daily energy summary with per-interval readings, published at 00:05 local time.",
+      "when": {
+        "port": 2,
+        "topic": "voltix/em3/+/daily"
+      },
+      "source": {
+        "file": "Voltix_EM3_MQTT_Register_Map_r5.xlsx",
+        "sheet": "Daily",
+        "cell": "A2",
+        "row": 2
+      },
+      "fields": [
+        {
+          "name": "meterId",
+          "type": "bytes",
+          "length": 4,
+          "description": "Meter serial (4 bytes, hex)",
+          "source": {
+            "file": "Voltix_EM3_MQTT_Register_Map_r5.xlsx",
+            "sheet": "Daily",
+            "cell": "C4",
+            "row": 4
+          }
+        },
+        {
+          "kind": "group",
+          "name": "date",
+          "description": "Summary date",
+          "source": {
+            "file": "Voltix_EM3_MQTT_Register_Map_r5.xlsx",
+            "sheet": "Daily",
+            "cell": "A5",
+            "row": 5
+          },
+          "fields": [
+            {
+              "name": "year",
+              "type": "uint",
+              "bits": 16,
+              "source": {
+                "file": "Voltix_EM3_MQTT_Register_Map_r5.xlsx",
+                "sheet": "Daily",
+                "cell": "C5",
+                "row": 5
+              }
+            },
+            {
+              "name": "month",
+              "type": "uint",
+              "bits": 8,
+              "min": 1,
+              "max": 12,
+              "source": {
+                "file": "Voltix_EM3_MQTT_Register_Map_r5.xlsx",
+                "sheet": "Daily",
+                "cell": "C6",
+                "row": 6
+              }
+            },
+            {
+              "name": "day",
+              "type": "uint",
+              "bits": 8,
+              "min": 1,
+              "max": 31,
+              "source": {
+                "file": "Voltix_EM3_MQTT_Register_Map_r5.xlsx",
+                "sheet": "Daily",
+                "cell": "C7",
+                "row": 7
+              }
+            }
+          ]
+        },
+        {
+          "name": "dailyEnergy",
+          "type": "uint",
+          "bits": 32,
+          "scale": 0.01,
+          "unit": "kW.h",
+          "description": "Energy imported during the day",
+          "source": {
+            "file": "Voltix_EM3_MQTT_Register_Map_r5.xlsx",
+            "sheet": "Daily",
+            "cell": "C8",
+            "row": 8
+          }
+        },
+        {
+          "name": "peakDemand",
+          "type": "uint",
+          "bits": 32,
+          "unit": "W",
+          "description": "Peak 15-min demand",
+          "source": {
+            "file": "Voltix_EM3_MQTT_Register_Map_r5.xlsx",
+            "sheet": "Daily",
+            "cell": "C9",
+            "row": 9
+          }
+        },
+        {
+          "name": "count",
+          "type": "uint",
+          "bits": 8,
+          "max": 24,
+          "description": "Number of interval readings that follow",
+          "source": {
+            "file": "Voltix_EM3_MQTT_Register_Map_r5.xlsx",
+            "sheet": "Daily",
+            "cell": "C10",
+            "row": 10
+          }
+        },
+        {
+          "kind": "repeat",
+          "name": "intervals",
+          "count": {
+            "ref": "count"
+          },
+          "description": "Interval readings",
+          "source": {
+            "file": "Voltix_EM3_MQTT_Register_Map_r5.xlsx",
+            "sheet": "Daily",
+            "cell": "A11",
+            "row": 11
+          },
+          "fields": [
+            {
+              "name": "hour",
+              "type": "uint",
+              "bits": 8,
+              "max": 23,
+              "unit": "h",
+              "description": "Interval start hour",
+              "source": {
+                "file": "Voltix_EM3_MQTT_Register_Map_r5.xlsx",
+                "sheet": "Daily",
+                "cell": "C12",
+                "row": 12
+              }
+            },
+            {
+              "name": "energy",
+              "type": "uint",
+              "bits": 16,
+              "scale": 0.01,
+              "unit": "kW.h",
+              "description": "Energy in interval",
+              "source": {
+                "file": "Voltix_EM3_MQTT_Register_Map_r5.xlsx",
+                "sheet": "Daily",
+                "cell": "C13",
+                "row": 13
+              }
+            }
+          ]
+        },
+        {
+          "kind": "checksum",
+          "name": "crc",
+          "algo": "crc16-modbus",
+          "description": "CRC-16/MODBUS, low byte first",
+          "source": {
+            "file": "Voltix_EM3_MQTT_Register_Map_r5.xlsx",
+            "sheet": "Daily",
+            "cell": "C14",
+            "row": 14
+          }
+        }
+      ]
+    }
+  ],
+  "downlink": [
+    {
+      "name": "relay",
+      "description": "Switch the load relay",
+      "when": {
+        "port": 10,
+        "topic": "voltix/em3/+/cmd"
+      },
+      "source": {
+        "file": "Voltix_EM3_MQTT_Register_Map_r5.xlsx",
+        "sheet": "Commands",
+        "cell": "A2",
+        "row": 2
+      },
+      "fields": [
+        {
+          "kind": "const",
+          "name": "cmd",
+          "bits": 8,
+          "value": 32,
+          "description": "Relay command 0x20",
+          "source": {
+            "file": "Voltix_EM3_MQTT_Register_Map_r5.xlsx",
+            "sheet": "Commands",
+            "cell": "C3",
+            "row": 3
+          }
+        },
+        {
+          "name": "state",
+          "type": "uint",
+          "bits": 8,
+          "enum": {
+            "0": "off",
+            "1": "on"
+          },
+          "description": "Relay state",
+          "source": {
+            "file": "Voltix_EM3_MQTT_Register_Map_r5.xlsx",
+            "sheet": "Commands",
+            "cell": "C4",
+            "row": 4
+          }
+        }
+      ]
+    }
+  ],
+  "meta": {
+    "createdBy": "seed",
+    "sourceDocument": "Voltix_EM3_MQTT_Register_Map_r5.xlsx",
+    "license": "Apache-2.0"
+  },
+  "vectors": [
+    {
+      "name": "realtime – balanced load",
+      "topic": "voltix/em3/a1b2c3d4/realtime",
+      "message": "realtime",
+      "hex": "a1b2c3d400090002600400005ffa08e7011a0400005e07095b022d0500006087d61200891300c635",
+      "data": {
+        "meterId": "a1b2c3d4",
+        "phases": [
+          {
+            "voltage": 230.4,
+            "current": 5.12,
+            "power": 1120,
+            "pf": 0.95
+          },
+          {
+            "voltage": 229.8,
+            "current": 4.87,
+            "power": 1050,
+            "pf": 0.94
+          },
+          {
+            "voltage": 231.1,
+            "current": 6.03,
+            "power": 1325,
+            "pf": 0.96
+          }
+        ],
+        "totalEnergy": 12345.67,
+        "frequency": 50.01,
+        "alarm": "none"
+      }
+    },
+    {
+      "name": "realtime – export, phase loss on L2",
+      "port": 1,
+      "message": "realtime",
+      "hex": "a1b2c3d4e909e2047af4ffffa3000000000000000000b20923000c0000000e3fb496007b1304ee10",
+      "data": {
+        "meterId": "a1b2c3d4",
+        "phases": [
+          {
+            "voltage": 253.7,
+            "current": 12.5,
+            "power": -2950,
+            "pf": -0.93
+          },
+          {
+            "voltage": 0,
+            "current": 0,
+            "power": 0,
+            "pf": 0
+          },
+          {
+            "voltage": 248.2,
+            "current": 0.35,
+            "power": 12,
+            "pf": 0.14
+          }
+        ],
+        "totalEnergy": 98765.43,
+        "frequency": 49.87,
+        "alarm": "phase_loss"
+      }
+    },
+    {
+      "name": "realtime – overvoltage",
+      "topic": "voltix/em3/00ff10ee/realtime",
+      "message": "realtime",
+      "hex": "00ff10ee500a6400e600000057500a6400e600000057500a6400e6000000570000000070170181a6",
+      "data": {
+        "meterId": "00ff10ee",
+        "phases": [
+          {
+            "voltage": 264,
+            "current": 1,
+            "power": 230,
+            "pf": 0.87
+          },
+          {
+            "voltage": 264,
+            "current": 1,
+            "power": 230,
+            "pf": 0.87
+          },
+          {
+            "voltage": 264,
+            "current": 1,
+            "power": 230,
+            "pf": 0.87
+          }
+        ],
+        "totalEnergy": 0,
+        "frequency": 60,
+        "alarm": "overvoltage"
+      }
+    },
+    {
+      "name": "daily summary – 3 intervals",
+      "topic": "voltix/em3/a1b2c3d4/daily",
+      "message": "daily_summary",
+      "hex": "a1b2c3d4ea070a1eb60300007210000003007d00085e0112db01a89c",
+      "data": {
+        "meterId": "a1b2c3d4",
+        "date": {
+          "year": 2026,
+          "month": 10,
+          "day": 30
+        },
+        "dailyEnergy": 9.5,
+        "peakDemand": 4210,
+        "count": 3,
+        "intervals": [
+          {
+            "hour": 0,
+            "energy": 1.25
+          },
+          {
+            "hour": 8,
+            "energy": 3.5
+          },
+          {
+            "hour": 18,
+            "energy": 4.75
+          }
+        ]
+      }
+    },
+    {
+      "name": "daily summary – no intervals",
+      "port": 2,
+      "message": "daily_summary",
+      "hex": "a1b2c3d4ea0701010000000000000000003c0b",
+      "data": {
+        "meterId": "a1b2c3d4",
+        "date": {
+          "year": 2026,
+          "month": 1,
+          "day": 1
+        },
+        "dailyEnergy": 0,
+        "peakDemand": 0,
+        "count": 0,
+        "intervals": []
+      }
+    },
+    {
+      "name": "relay on",
+      "direction": "downlink",
+      "port": 10,
+      "message": "relay",
+      "hex": "2001",
+      "data": {
+        "state": "on"
+      }
+    },
+    {
+      "name": "relay off",
+      "direction": "downlink",
+      "port": 10,
+      "message": "relay",
+      "hex": "2000",
+      "data": {
+        "state": "off"
+      }
+    }
+  ]
+}

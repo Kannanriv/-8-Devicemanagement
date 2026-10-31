@@ -1,0 +1,456 @@
+{
+  "dcs": "1.0",
+  "id": "envio.th-sense",
+  "version": "1.1.0",
+  "device": {
+    "vendor": "Envio",
+    "model": "TH-Sense",
+    "description": "Envio TH-Sense battery-powered LoRaWAN indoor temperature & humidity sensor with on-board history buffer.",
+    "firmware": ">=1.0.0 <2.0.0",
+    "protocols": [
+      "lorawan"
+    ],
+    "category": "environment-sensor"
+  },
+  "defaults": {
+    "endian": "big"
+  },
+  "uplink": [
+    {
+      "name": "periodic",
+      "description": "Periodic measurement (fPort 1)",
+      "when": {
+        "port": 1
+      },
+      "source": {
+        "file": "Envio_TH-Sense_Payload_Spec_v1.1.xlsx",
+        "sheet": "Uplinks",
+        "cell": "A2",
+        "row": 2
+      },
+      "fields": [
+        {
+          "name": "temperature",
+          "type": "int",
+          "bits": 16,
+          "scale": 0.01,
+          "unit": "Cel",
+          "min": -40,
+          "max": 85,
+          "description": "Air temperature",
+          "semantic": "lwm2m:3303/5700",
+          "source": {
+            "file": "Envio_TH-Sense_Payload_Spec_v1.1.xlsx",
+            "sheet": "Uplinks",
+            "cell": "C3",
+            "row": 3
+          }
+        },
+        {
+          "name": "humidity",
+          "type": "uint",
+          "bits": 8,
+          "scale": 0.5,
+          "unit": "%",
+          "min": 0,
+          "max": 100,
+          "description": "Relative humidity",
+          "semantic": "lwm2m:3304/5700",
+          "source": {
+            "file": "Envio_TH-Sense_Payload_Spec_v1.1.xlsx",
+            "sheet": "Uplinks",
+            "cell": "C4",
+            "row": 4
+          }
+        },
+        {
+          "name": "battery",
+          "type": "uint",
+          "bits": 16,
+          "unit": "mV",
+          "min": 2000,
+          "max": 3700,
+          "description": "Battery voltage",
+          "source": {
+            "file": "Envio_TH-Sense_Payload_Spec_v1.1.xlsx",
+            "sheet": "Uplinks",
+            "cell": "C5",
+            "row": 5
+          }
+        },
+        {
+          "kind": "group",
+          "name": "status",
+          "description": "Status bits",
+          "source": {
+            "file": "Envio_TH-Sense_Payload_Spec_v1.1.xlsx",
+            "sheet": "Uplinks",
+            "cell": "A6",
+            "row": 6
+          },
+          "fields": [
+            {
+              "name": "low_battery",
+              "type": "bool",
+              "description": "Battery below 2.4 V (bit 7)",
+              "source": {
+                "file": "Envio_TH-Sense_Payload_Spec_v1.1.xlsx",
+                "sheet": "Uplinks",
+                "cell": "C7",
+                "row": 7
+              }
+            },
+            {
+              "name": "sensor_error",
+              "type": "bool",
+              "description": "SHT sensor read failure (bit 6)",
+              "source": {
+                "file": "Envio_TH-Sense_Payload_Spec_v1.1.xlsx",
+                "sheet": "Uplinks",
+                "cell": "C8",
+                "row": 8
+              }
+            },
+            {
+              "name": "reserved",
+              "type": "uint",
+              "bits": 6,
+              "hidden": true,
+              "description": "Reserved",
+              "source": {
+                "file": "Envio_TH-Sense_Payload_Spec_v1.1.xlsx",
+                "sheet": "Uplinks",
+                "cell": "C9",
+                "row": 9
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "config_ack",
+      "description": "Acknowledgement of a configuration downlink (fPort 2)",
+      "when": {
+        "port": 2
+      },
+      "source": {
+        "file": "Envio_TH-Sense_Payload_Spec_v1.1.xlsx",
+        "sheet": "Uplinks",
+        "cell": "A11",
+        "row": 11
+      },
+      "fields": [
+        {
+          "name": "command",
+          "type": "uint",
+          "bits": 8,
+          "enum": {
+            "1": "set_interval",
+            "2": "request_history"
+          },
+          "description": "Acknowledged command id",
+          "source": {
+            "file": "Envio_TH-Sense_Payload_Spec_v1.1.xlsx",
+            "sheet": "Uplinks",
+            "cell": "C12",
+            "row": 12
+          }
+        },
+        {
+          "name": "result",
+          "type": "uint",
+          "bits": 8,
+          "enum": {
+            "0": "ok",
+            "1": "rejected",
+            "2": "invalid_param"
+          },
+          "description": "Result code",
+          "source": {
+            "file": "Envio_TH-Sense_Payload_Spec_v1.1.xlsx",
+            "sheet": "Uplinks",
+            "cell": "C13",
+            "row": 13
+          }
+        },
+        {
+          "name": "interval",
+          "type": "uint",
+          "bits": 16,
+          "unit": "min",
+          "description": "Measurement interval now in effect",
+          "source": {
+            "file": "Envio_TH-Sense_Payload_Spec_v1.1.xlsx",
+            "sheet": "Uplinks",
+            "cell": "C14",
+            "row": 14
+          }
+        }
+      ]
+    },
+    {
+      "name": "history",
+      "description": "Buffered samples, oldest first (fPort 3)",
+      "when": {
+        "port": 3
+      },
+      "source": {
+        "file": "Envio_TH-Sense_Payload_Spec_v1.1.xlsx",
+        "sheet": "Uplinks",
+        "cell": "A16",
+        "row": 16
+      },
+      "fields": [
+        {
+          "kind": "repeat",
+          "name": "samples",
+          "count": "remaining",
+          "description": "Samples until end of payload",
+          "source": {
+            "file": "Envio_TH-Sense_Payload_Spec_v1.1.xlsx",
+            "sheet": "Uplinks",
+            "cell": "A17",
+            "row": 17
+          },
+          "fields": [
+            {
+              "name": "offset_min",
+              "type": "uint",
+              "bits": 8,
+              "unit": "min",
+              "description": "Minutes before transmission",
+              "source": {
+                "file": "Envio_TH-Sense_Payload_Spec_v1.1.xlsx",
+                "sheet": "Uplinks",
+                "cell": "C18",
+                "row": 18
+              }
+            },
+            {
+              "name": "temperature",
+              "type": "int",
+              "bits": 16,
+              "scale": 0.01,
+              "unit": "Cel",
+              "min": -40,
+              "max": 85,
+              "description": "Air temperature",
+              "semantic": "lwm2m:3303/5700",
+              "source": {
+                "file": "Envio_TH-Sense_Payload_Spec_v1.1.xlsx",
+                "sheet": "Uplinks",
+                "cell": "C19",
+                "row": 19
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "downlink": [
+    {
+      "name": "set_interval",
+      "description": "Change measurement interval",
+      "when": {
+        "port": 10
+      },
+      "source": {
+        "file": "Envio_TH-Sense_Payload_Spec_v1.1.xlsx",
+        "sheet": "Downlinks",
+        "cell": "A2",
+        "row": 2
+      },
+      "fields": [
+        {
+          "kind": "const",
+          "name": "cmd",
+          "bits": 8,
+          "value": 1,
+          "description": "Command 0x01",
+          "source": {
+            "file": "Envio_TH-Sense_Payload_Spec_v1.1.xlsx",
+            "sheet": "Downlinks",
+            "cell": "C3",
+            "row": 3
+          }
+        },
+        {
+          "name": "interval",
+          "type": "uint",
+          "bits": 16,
+          "unit": "min",
+          "min": 1,
+          "max": 1440,
+          "default": 15,
+          "description": "Measurement interval",
+          "source": {
+            "file": "Envio_TH-Sense_Payload_Spec_v1.1.xlsx",
+            "sheet": "Downlinks",
+            "cell": "C4",
+            "row": 4
+          }
+        }
+      ]
+    },
+    {
+      "name": "request_history",
+      "description": "Ask the device to upload buffered samples on fPort 3",
+      "when": {
+        "port": 10
+      },
+      "source": {
+        "file": "Envio_TH-Sense_Payload_Spec_v1.1.xlsx",
+        "sheet": "Downlinks",
+        "cell": "A6",
+        "row": 6
+      },
+      "fields": [
+        {
+          "kind": "const",
+          "name": "cmd",
+          "bits": 8,
+          "value": 2,
+          "description": "Command 0x02",
+          "source": {
+            "file": "Envio_TH-Sense_Payload_Spec_v1.1.xlsx",
+            "sheet": "Downlinks",
+            "cell": "C7",
+            "row": 7
+          }
+        },
+        {
+          "name": "hours",
+          "type": "uint",
+          "bits": 8,
+          "unit": "h",
+          "min": 1,
+          "max": 48,
+          "default": 24,
+          "description": "How many hours of history to send",
+          "source": {
+            "file": "Envio_TH-Sense_Payload_Spec_v1.1.xlsx",
+            "sheet": "Downlinks",
+            "cell": "C8",
+            "row": 8
+          }
+        }
+      ]
+    }
+  ],
+  "meta": {
+    "createdBy": "seed",
+    "sourceDocument": "Envio_TH-Sense_Payload_Spec_v1.1.xlsx",
+    "license": "Apache-2.0"
+  },
+  "vectors": [
+    {
+      "name": "periodic – office",
+      "port": 1,
+      "message": "periodic",
+      "hex": "08d15f0bc200",
+      "data": {
+        "temperature": 22.57,
+        "humidity": 47.5,
+        "battery": 3010,
+        "status": {
+          "low_battery": false,
+          "sensor_error": false
+        }
+      }
+    },
+    {
+      "name": "periodic – freezer, low battery",
+      "port": 1,
+      "message": "periodic",
+      "hex": "f8dfa4092e80",
+      "data": {
+        "temperature": -18.25,
+        "humidity": 82,
+        "battery": 2350,
+        "status": {
+          "low_battery": true,
+          "sensor_error": false
+        }
+      }
+    },
+    {
+      "name": "periodic – sensor error",
+      "port": 1,
+      "message": "periodic",
+      "hex": "0000000ba440",
+      "data": {
+        "temperature": 0,
+        "humidity": 0,
+        "battery": 2980,
+        "status": {
+          "low_battery": false,
+          "sensor_error": true
+        }
+      }
+    },
+    {
+      "name": "config ack – interval ok",
+      "port": 2,
+      "message": "config_ack",
+      "hex": "0100000f",
+      "data": {
+        "command": "set_interval",
+        "result": "ok",
+        "interval": 15
+      }
+    },
+    {
+      "name": "history – 3 samples",
+      "port": 3,
+      "message": "history",
+      "hex": "1e08611408700a0887",
+      "data": {
+        "samples": [
+          {
+            "offset_min": 30,
+            "temperature": 21.45
+          },
+          {
+            "offset_min": 20,
+            "temperature": 21.6
+          },
+          {
+            "offset_min": 10,
+            "temperature": 21.83
+          }
+        ]
+      }
+    },
+    {
+      "name": "history – empty buffer",
+      "port": 3,
+      "message": "history",
+      "hex": "",
+      "data": {
+        "samples": []
+      }
+    },
+    {
+      "name": "set_interval 15 min",
+      "direction": "downlink",
+      "port": 10,
+      "message": "set_interval",
+      "hex": "01000f",
+      "data": {
+        "interval": 15
+      }
+    },
+    {
+      "name": "request_history 6 h",
+      "direction": "downlink",
+      "port": 10,
+      "message": "request_history",
+      "hex": "0206",
+      "data": {
+        "hours": 6
+      }
+    }
+  ]
+}
