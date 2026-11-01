@@ -258,8 +258,16 @@ describe("preflight", () => {
   it("passes for an online active device with battery", () => {
     expect(preflight(makeDevice())).toEqual({ ok: true, reasons: [] });
   });
-  it("passes for installed and mains-powered (no battery) devices", () => {
-    expect(preflight(makeDevice({ lifecycle: "installed" }, { battery: undefined })).ok).toBe(true);
+  it("passes for mains-powered (no battery) devices", () => {
+    expect(preflight(makeDevice({}, { battery: undefined })).ok).toBe(true);
+  });
+  it.each(["registered", "assigned", "installing", "pending_activation", "maintenance", "suspended", "swap", "retired"] as const)("rejects lifecycle %s (requires activated)", (lifecycle) => {
+    const r = preflight(makeDevice({ lifecycle }));
+    expect(r.ok).toBe(false);
+    expect(r.reasons.join()).toMatch(/activated/);
+  });
+  it("rejects stale devices (must be online)", () => {
+    expect(preflight(makeDevice({}, { connectivity: "stale" })).ok).toBe(false);
   });
   it("fails on low battery, offline, wrong lifecycle with all reasons", () => {
     const r = preflight(makeDevice({ lifecycle: "maintenance" }, { battery: 29, connectivity: "offline" }));

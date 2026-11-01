@@ -72,7 +72,7 @@ describe("evaluateAutomation", () => {
   it("lifecycle trigger matches target state", () => {
     const a = auto({ trigger: { type: "lifecycle", to: "suspended" } });
     expect(evaluateAutomation(a, { type: "lifecycle", to: "suspended", device }, NOW).matched).toBe(true);
-    expect(evaluateAutomation(a, { type: "lifecycle", to: "active", device }, NOW).matched).toBe(false);
+    expect(evaluateAutomation(a, { type: "lifecycle", to: "activated", device }, NOW).matched).toBe(false);
   });
   it("offline trigger matches when offline at least N minutes", () => {
     const a = auto({ trigger: { type: "offline", minutes: 30 }, condition: "minutes >= 30 && device.modelId == 'm-1'" });

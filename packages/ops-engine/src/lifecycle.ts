@@ -1,4 +1,4 @@
-import { LIFECYCLE_TRANSITIONS } from "@hash8/sdk-ts";
+import { LIFECYCLE_LABELS, LIFECYCLE_TRANSITIONS } from "@hash8/sdk-ts";
 import type { AuditEntry, Device, LifecycleState, TimelineEvent } from "@hash8/sdk-ts";
 import { OpsError } from "./errors";
 
@@ -31,13 +31,17 @@ export function transitionDevice(
   }
   const at = now.toISOString();
   const noteDetail = note !== undefined ? { note } : {};
+  const next: Device = { ...device, lifecycle: to, updatedAt: at };
+  if (to === "installing") next.installedAt = at;
+  // First commissioning stamps activatedAt; returning from maintenance/suspended/swap keeps it.
+  if (to === "activated" && (from === "pending_activation" || !device.activatedAt)) next.activatedAt = at;
   return {
-    device: { ...device, lifecycle: to, updatedAt: at },
+    device: next,
     timeline: {
       deviceId: device.id,
       at,
       kind: "lifecycle",
-      title: `Lifecycle ${from} → ${to}`,
+      title: `Lifecycle ${LIFECYCLE_LABELS[from] ?? from} → ${LIFECYCLE_LABELS[to] ?? to}`,
       detail: { from, to, actor, ...noteDetail },
     },
     audit: {

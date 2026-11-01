@@ -10,3 +10,4 @@ export * from "./cron";
 export * from "./automations";
 export * from "./webhooks";
 export * from "./inbox";
+export * from "./inventory";

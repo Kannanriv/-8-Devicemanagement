@@ -5,7 +5,7 @@ import { makeCampaign, NOW } from "./fixtures";
 
 const empty: OpsSnapshot = { campaigns: [], unknownPayloadCount: 0, offlineDevices: { count: 0 }, openAlerts: [] };
 const alert = (over: Partial<Alert>): Alert => ({
-  id: "al-1", tenantId: "t-1", severity: "warning", title: "Hot", status: "open", source: "health", createdAt: "2026-10-31T10:00:00Z", ...over,
+  id: "al-1", tenantId: "t-1", severity: "warning", category: "abnormal_telemetry", title: "Hot", status: "open", source: "health", createdAt: "2026-10-31T10:00:00Z", ...over,
 });
 
 describe("buildOpsInbox", () => {
@@ -93,9 +93,32 @@ describe("buildOpsInbox", () => {
     const items = buildOpsInbox({
       campaigns: [c], unknownPayloadCount: 1, offlineDevices: { count: 1 }, expiringCerts: 1,
       pendingSpecReviews: 1, openAlerts: [alert({})], driftedConfigs: 1,
+      staleDevices: { count: 1 }, pendingActivation: { count: 1 }, simIssues: { count: 1 },
     }, NOW);
-    expect(items).toHaveLength(7);
-    expect(new Set(items.map((i) => i.id)).size).toBe(7);
+    expect(items).toHaveLength(10);
+    expect(new Set(items.map((i) => i.id)).size).toBe(10);
+    expect(new Set(items.map((i) => i.kind)).size).toBe(10);
     for (const i of items) expect(i.suggestedAction?.label).toBeTruthy();
+  });
+
+  it("stale telemetry cohort", () => {
+    const [item] = buildOpsInbox({ ...empty, staleDevices: { count: 40, byModel: { "m-9": 40 } } }, NOW);
+    expect(item).toMatchObject({ kind: "stale_telemetry", severity: "warning", count: 40, href: "/fleet?connectivity=stale" });
+    expect(item!.summary).toContain("m-9");
+  });
+  it("pending activation is info, warning when some are overdue", () => {
+    const [a] = buildOpsInbox({ ...empty, pendingActivation: { count: 12 } }, NOW);
+    expect(a).toMatchObject({ kind: "pending_activation", severity: "info", count: 12, href: "/fleet?lifecycle=pending_activation" });
+    const [b] = buildOpsInbox({ ...empty, pendingActivation: { count: 12, overdue: 3 } }, NOW);
+    expect(b!.severity).toBe("warning");
+    expect(b!.summary).toContain("3");
+  });
+  it("SIM issues summarise by status", () => {
+    const [item] = buildOpsInbox({ ...empty, simIssues: { count: 6, byStatus: { suspended: 4, terminated: 2 } } }, NOW);
+    expect(item).toMatchObject({ kind: "sim_issue", severity: "warning", count: 6, href: "/fleet?sim=issue" });
+    expect(item!.summary).toContain("suspended (4)");
+  });
+  it("zero counts for new kinds produce no items", () => {
+    expect(buildOpsInbox({ ...empty, staleDevices: { count: 0 }, pendingActivation: { count: 0 }, simIssues: { count: 0 } }, NOW)).toEqual([]);
   });
 });

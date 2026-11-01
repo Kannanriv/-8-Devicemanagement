@@ -10,6 +10,12 @@ export interface OpsSnapshot {
   pendingSpecReviews?: number;
   openAlerts: Alert[];
   driftedConfigs?: number;
+  /** Activated devices with connectivity=stale. */
+  staleDevices?: { count: number; byModel?: Record<string, number> };
+  /** Devices in lifecycle pending_activation; `overdue` = stuck past the activation SLA. */
+  pendingActivation?: { count: number; overdue?: number };
+  /** Devices whose SIM is not usable (suspended/terminated/unknown/over plan). */
+  simIssues?: { count: number; byStatus?: Record<string, number> };
 }
 
 /** Volumes at or above which an item escalates to critical. */
@@ -92,6 +98,56 @@ export function buildOpsInbox(s: OpsSnapshot, now: Date): OpsItem[] {
       count: s.offlineDevices.count,
       href: "/fleet?connectivity=offline",
       suggestedAction: { label: "Ask Anomaly Sentinel", agent: "anomaly-sentinel" },
+      createdAt: at,
+    });
+  }
+
+  const stale = s.staleDevices;
+  if (stale && stale.count > 0) {
+    const models = top(stale.byModel);
+    items.push({
+      id: "stale_telemetry",
+      kind: "stale_telemetry",
+      severity: "warning",
+      title: `${plural(stale.count, "device")} with stale telemetry`,
+      summary: models ? `Most affected models: ${models}.` : "Devices reporting late (1–3× their expected interval).",
+      count: stale.count,
+      href: "/fleet?connectivity=stale",
+      suggestedAction: { label: "Ask Anomaly Sentinel", agent: "anomaly-sentinel" },
+      createdAt: at,
+    });
+  }
+
+  const pend = s.pendingActivation;
+  if (pend && pend.count > 0) {
+    const overdue = pend.overdue ?? 0;
+    items.push({
+      id: "pending_activation",
+      kind: "pending_activation",
+      severity: overdue > 0 ? "warning" : "info",
+      title: `${plural(pend.count, "device")} pending activation`,
+      summary: overdue > 0
+        ? `${plural(overdue, "device")} stuck past the activation SLA; check SIM and connectivity readiness.`
+        : "Installed devices waiting for provisioning / SIM / first connection.",
+      count: pend.count,
+      href: "/fleet?lifecycle=pending_activation",
+      suggestedAction: { label: "Ask Fleet Copilot", agent: "fleet-copilot" },
+      createdAt: at,
+    });
+  }
+
+  const sim = s.simIssues;
+  if (sim && sim.count > 0) {
+    const statuses = top(sim.byStatus, 5);
+    items.push({
+      id: "sim_issue",
+      kind: "sim_issue",
+      severity: "warning",
+      title: `${plural(sim.count, "SIM issue")}`,
+      summary: statuses ? `By status: ${statuses}.` : "SIMs not active or over plan; devices may lose connectivity.",
+      count: sim.count,
+      href: "/fleet?sim=issue",
+      suggestedAction: { label: "Review SIMs with Fleet Copilot", agent: "fleet-copilot" },
       createdAt: at,
     });
   }

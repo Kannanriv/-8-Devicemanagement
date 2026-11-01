@@ -218,8 +218,8 @@ export function preflight(device: Device): CheckResult {
   if (device.health?.connectivity !== "online") {
     reasons.push(`Device is ${device.health?.connectivity ?? "unknown"}, must be online`);
   }
-  if (device.lifecycle !== "active" && device.lifecycle !== "installed") {
-    reasons.push(`Lifecycle ${device.lifecycle} not eligible (needs active or installed)`);
+  if (device.lifecycle !== "activated") {
+    reasons.push(`Lifecycle ${device.lifecycle} not eligible (needs activated)`);
   }
   return { ok: reasons.length === 0, reasons };
 }
