@@ -32,62 +32,224 @@ export interface DeviceModel {
   createdAt: string;
 }
 
+/**
+ * Lifecycle is ONE of three independent state axes (lifecycle ≠ connectivity ≠ health).
+ * Inventory → Assigned → Installation in progress → Pending activation → Activated,
+ * with controlled Maintenance / Suspended / Swap states, and Retired (history retained).
+ */
 export type LifecycleState =
-  | "manufactured"
-  | "provisioned"
-  | "in_stock"
-  | "transferred"
-  | "installed"
-  | "active"
+  | "registered" // in inventory, available
+  | "assigned" // linked to a deployment / asset
+  | "installing" // installation app workflow in progress
+  | "pending_activation" // provisioning / SIM / connectivity readiness
+  | "activated" // commissioned, operationally ready
   | "maintenance"
   | "suspended"
-  | "retired";
+  | "swap" // being replaced by another device on the same asset
+  | "retired"; // decommissioned, records retained
 
 export const LIFECYCLE_TRANSITIONS: Record<LifecycleState, LifecycleState[]> = {
-  manufactured: ["provisioned", "retired"],
-  provisioned: ["in_stock", "transferred", "installed", "retired"],
-  in_stock: ["transferred", "installed", "retired"],
-  transferred: ["in_stock", "installed", "retired"],
-  installed: ["active", "maintenance", "retired"],
-  active: ["maintenance", "suspended", "retired"],
-  maintenance: ["active", "retired"],
-  suspended: ["active", "retired"],
+  registered: ["assigned", "retired"],
+  assigned: ["installing", "registered", "retired"],
+  installing: ["pending_activation", "assigned", "retired"],
+  pending_activation: ["activated", "installing", "retired"],
+  activated: ["maintenance", "suspended", "swap", "retired"],
+  maintenance: ["activated", "swap", "retired"],
+  suspended: ["activated", "retired"],
+  swap: ["registered", "activated", "retired"],
   retired: [],
 };
 
-export type Connectivity = "online" | "offline" | "never_seen";
+export const LIFECYCLE_LABELS: Record<LifecycleState, string> = {
+  registered: "Registered",
+  assigned: "Assigned",
+  installing: "Installation in progress",
+  pending_activation: "Pending activation",
+  activated: "Activated",
+  maintenance: "Maintenance",
+  suspended: "Suspended",
+  swap: "Swap",
+  retired: "Retired",
+};
+
+/** Factory/provisioning status — orthogonal to lifecycle (OEM side). */
+export type ProvisioningStatus = "unprovisioned" | "flashed" | "provisioned";
+
+/**
+ * online: seen within expected interval; stale: seen, but telemetry older than expected (1×–3× interval);
+ * offline: > 3× interval; never_seen: never communicated (not commissioned).
+ */
+export type Connectivity = "online" | "stale" | "offline" | "never_seen";
+
+export type HealthLevel = "normal" | "warning" | "critical";
 
 export interface DeviceHealth {
   score: number; // 0..100
+  level: HealthLevel;
   connectivity: Connectivity;
   lastSeenAt?: string;
+  lastHeartbeatAt?: string;
+  /** Age in seconds of the newest telemetry value. */
+  dataFreshnessSec?: number;
   battery?: number; // %
   signal?: number; // dBm / RSSI
+  gps?: { lat: number; lng: number; at: string; fix: boolean };
+  engineHours?: number;
   msgRatePerHour?: number;
   issues: string[];
 }
 
+export type SimStatus = "inactive" | "active" | "suspended" | "terminated" | "unknown";
+export interface SimInfo {
+  iccid: string;
+  imsi?: string;
+  msisdn?: string;
+  carrier: string;
+  status: SimStatus;
+  plan?: string;
+  usageMbMonth?: number;
+  planLimitMb?: number;
+  activatedAt?: string;
+  /** Deep link into #8 SIM Management. */
+  externalUrl?: string;
+}
+
+export type CredentialStatus = "active" | "expiring" | "expired" | "revoked";
+export interface DeviceCredential {
+  id: string;
+  deviceId: string;
+  kind: "x509" | "psk" | "token";
+  fingerprint: string;
+  subject?: string;
+  issuedAt: string;
+  expiresAt?: string;
+  status: CredentialStatus;
+  revokedAt?: string;
+  revokedReason?: string;
+}
+
 export interface Device {
   id: string;
+  /** Unique device identifier shown to operators. */
+  udi: string;
   tenantId: string; // current owner
   oemTenantId: string; // manufacturer
+  oem: string; // manufacturer display name
   modelId: string;
+  model: string; // model display name
   serial: string;
   imei?: string;
-  iccid?: string;
   name?: string;
+  organization?: string; // customer organization
+  branch?: string;
   batchId?: string;
   lifecycle: LifecycleState;
+  provisioning: ProvisioningStatus;
   firmwareVersion?: string;
+  /** Set while an OTA campaign targets this device. */
+  otaStatus?: "pending" | "downloading" | "installing" | "succeeded" | "failed" | "rolled_back";
   codecId?: string;
   codecVersion?: string;
+  configProfileId?: string;
+  configVersion?: number;
+  assetId?: string;
+  assetName?: string;
+  sim?: SimInfo;
   tags: string[];
   site?: { name: string; lat?: number; lng?: number };
+  installedAt?: string;
+  activatedAt?: string;
   health: DeviceHealth;
   /** Latest decoded values (device shadow, reported). */
   shadow: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Inventory KPI cards. Lifecycle counts and connectivity counts are separate axes; `attentionRequired` may overlap and is labelled so. */
+export interface InventoryKpis {
+  total: number;
+  connected: number; // connectivity=online among activated
+  stale: number; // connectivity=stale among activated
+  offline: number; // connectivity=offline among activated
+  notCommissioned: number; // never_seen
+  attentionRequired: number; // health=critical|warning OR open critical alert (overlapping)
+  pendingInstallation: number; // lifecycle=assigned|installing
+  activationInProgress: number; // lifecycle=pending_activation
+  otaInProgress: number; // otaStatus in pending|downloading|installing
+  suspended: number;
+  retired: number;
+}
+
+// ── Assets (device ↔ asset association) ────────────────────────────────────
+export interface Asset {
+  id: string;
+  tenantId: string;
+  name: string;
+  type: string; // "excavator" | "generator" | "truck" | "cold-room" | "meter-point" ...
+  make?: string;
+  model?: string;
+  serial?: string;
+  organization?: string;
+  branch?: string;
+  site?: { name: string; lat?: number; lng?: number };
+  deviceIds: string[];
+  createdAt: string;
+}
+export interface AssetAssociation {
+  id: string;
+  assetId: string;
+  deviceId: string;
+  role: "primary" | "secondary";
+  from: string;
+  to?: string; // open = current
+  reason?: "install" | "swap" | "reassign" | "remove";
+  actor: string;
+}
+
+// ── Bulk operations (eligibility preview → confirm → progress → per-device result) ──
+export type BulkOp =
+  | "assign"
+  | "lifecycle"
+  | "apply_config"
+  | "start_ota"
+  | "suspend"
+  | "reactivate"
+  | "diagnostics"
+  | "command"
+  | "tag"
+  | "transfer"
+  | "export";
+export interface BulkPreview {
+  op: BulkOp;
+  eligible: string[];
+  ineligible: { deviceId: string; reason: string }[];
+  requiresPermission?: string;
+  warnings: string[];
+}
+export interface BulkJob {
+  id: string;
+  op: BulkOp;
+  params: Record<string, unknown>;
+  status: "running" | "completed" | "completed_with_errors" | "failed";
+  total: number;
+  succeeded: number;
+  failed: number;
+  results: { deviceId: string; ok: boolean; error?: string }[];
+  actor: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ── Reports ────────────────────────────────────────────────────────────────
+export interface FleetReport {
+  period: { from: string; to: string };
+  reliability: { uptimePct: number; mtbfHours?: number; series: { at: string; onlinePct: number }[] };
+  deployment: { installs: number; successRate: number; avgActivationHours: number };
+  ota: { campaigns: number; successRate: number; rollbacks: number };
+  failures: { byCause: Record<string, number>; byModel: Record<string, number> };
+  connectivity: { avgSignal?: number; dataUsageMb: number; byCarrier: Record<string, number> };
+  utilization: { messages: number; decodeRate: number; activeDevicesPct: number };
 }
 
 export interface Batch {
@@ -146,7 +308,7 @@ export interface DeviceMessage {
   codecVersion?: string;
 }
 
-export type TimelineKind = "message" | "lifecycle" | "command" | "config" | "ota" | "alert" | "audit";
+export type TimelineKind = "message" | "lifecycle" | "command" | "config" | "ota" | "alert" | "audit" | "association" | "ownership" | "technician" | "security";
 export interface TimelineEvent {
   id: string;
   deviceId: string;
@@ -234,12 +396,18 @@ export interface Alert {
   id: string;
   tenantId: string;
   deviceId?: string;
+  assetId?: string;
   severity: Severity;
+  category: "device_failure" | "abnormal_telemetry" | "communication_loss" | "security" | "ota" | "other";
   title: string;
   detail?: string;
   status: "open" | "acknowledged" | "resolved";
   source: string; // "automation:<id>" | "health" | "agent:<name>" | ...
+  acknowledgedBy?: string;
+  resolvedBy?: string;
+  resolution?: string;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface Automation {
@@ -300,7 +468,7 @@ export interface AuditEntry {
 // ── Ops Inbox ──────────────────────────────────────────────────────────────
 export interface OpsItem {
   id: string;
-  kind: "rollout" | "unknown_payloads" | "offline_cohort" | "cert_expiry" | "spec_review" | "alert" | "config_drift";
+  kind: "rollout" | "unknown_payloads" | "offline_cohort" | "stale_telemetry" | "cert_expiry" | "spec_review" | "alert" | "config_drift" | "pending_activation" | "sim_issue";
   severity: Severity;
   title: string;
   summary: string;
@@ -323,11 +491,21 @@ export interface FleetStats {
 
 export interface DeviceQuery {
   q?: string;
+  organization?: string;
+  branch?: string;
+  oem?: string;
   modelId?: string;
   lifecycle?: LifecycleState;
   connectivity?: Connectivity;
-  tag?: string;
+  health?: HealthLevel;
   firmwareVersion?: string;
+  assetId?: string;
+  tag?: string;
+  installedFrom?: string;
+  installedTo?: string;
+  lastSeenBefore?: string;
+  lastSeenAfter?: string;
+  sort?: "lastSeen" | "health" | "udi" | "installedAt";
   limit?: number;
   cursor?: string;
 }

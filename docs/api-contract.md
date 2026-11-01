@@ -35,3 +35,23 @@ Errors: `{ error: { code, message } }` with proper HTTP status.
 | Audit | GET `/audit?target&actor&limit` | `AuditEntry[]` |
 | Agents | GET `/agents` · POST `/agents/:name/run` · GET `/agents/runs/:id` · POST `/agents/runs/:id/approve` | `AgentRun` |
 | Live | WS `/live` — server pushes `{type: "message"|"alert"|"device"|"ota", payload}` | |
+
+## v1.1 additions — 14 device-management modules (user spec, 2026-11-01)
+Lifecycle, connectivity and health are **separate axes** (see `LifecycleState`, `Connectivity`, `HealthLevel` in types.ts).
+Lifecycle: registered → assigned → installing → pending_activation → activated, with maintenance / suspended / swap, and retired (history retained).
+
+| Module | Method & path | Returns |
+|---|---|---|
+| 01 Overview | GET `/fleet/stats` (existing) + GET `/reports/trends?days=30` | `{at, online, messages, alerts}[]` |
+| 02 Inventory | GET `/inventory/kpis` | `InventoryKpis` |
+| 02 Inventory | GET `/devices` supports all `DeviceQuery` filters (organization, branch, oem, modelId, lifecycle, connectivity, health, firmwareVersion, assetId, installedFrom/To, lastSeenBefore/After, sort) | `Page<Device>` |
+| 02 Inventory | GET `/devices/export?<same filters>` | CSV |
+| 02 Bulk | POST `/devices/bulk/preview` `{op, deviceIds?, query?, params}` (permission + eligibility per device) | `BulkPreview` |
+| 02 Bulk | POST `/devices/bulk` `{op, deviceIds, params}` · GET `/bulk-jobs/:id` · GET `/bulk-jobs` | `BulkJob` (per-device results) |
+| 03 Lifecycle | POST `/devices/:id/lifecycle` `{to, note?}` — new states; GET `/lifecycle/summary` | counts per state |
+| 04 Assets | GET/POST `/assets` · GET/PATCH `/assets/:id` · POST `/assets/:id/devices` `{deviceId, role}` · DELETE `/assets/:id/devices/:deviceId` · POST `/assets/:id/swap` `{oldDeviceId, newDeviceId}` · GET `/assets/:id/associations` | `Asset`, `AssetAssociation[]` |
+| 07 SIM | GET `/devices/:id/sim` · POST `/devices/:id/sim/{activate,suspend}` · GET `/sims?status&carrier` | `SimInfo` |
+| 10 Alerts | GET `/alerts?status&severity&category&deviceId` · POST `/alerts/:id/{ack,resolve}` `{resolution?}` · GET/POST `/alert-rules` (= automations with alert actions) | `Alert` |
+| 11 History | GET `/devices/:id/timeline?kinds=lifecycle,config,ownership,technician,command,association` | `TimelineEvent[]` |
+| 12 Security | GET `/devices/:id/credentials` · POST `/devices/:id/credentials` (issue X.509 from dev CA) · POST `/credentials/:id/revoke` `{reason}` · GET `/security/overview` (expiring/expired/revoked counts, tenant isolation checks) | `DeviceCredential` |
+| 13 Reports | GET `/reports/fleet?from&to` | `FleetReport` |
