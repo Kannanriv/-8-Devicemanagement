@@ -43,7 +43,7 @@ A **persona switcher** in the shell changes the home page, the order of the navi
 2. **Launch (OEM).** Launch Studio is a guided runway: Model → Spec (drop Excel) → Codec verified → Firmware signed → Certification → Storefront listing → Go live.
    - A readiness score, with blockers explained.
    - A live preview of the storefront page as the OEM edits it.
-3. **Marketplace (ecosystem).** It has four parts:
+3. **Ecosystem** (full model in `docs/ecosystem-model.md`: participants, relations, flows, deals, releases, programs). It includes:
    - **Device Catalog:** a storefront for buyers. Each device has:
      - a hero section, specs and a datasheet;
      - a *live decoder playground* (paste hex → JSON);
