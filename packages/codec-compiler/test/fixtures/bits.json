@@ -1,0 +1,215 @@
+{
+  "dcs": "1.0",
+  "id": "test.bits",
+  "version": "2.0.0",
+  "device": {
+    "vendor": "Test",
+    "model": "Bits",
+    "protocols": [
+      "mqtt"
+    ]
+  },
+  "uplink": [
+    {
+      "name": "sensor",
+      "when": {
+        "topic": "devices/+/up"
+      },
+      "fields": [
+        {
+          "name": "temp",
+          "type": "uint",
+          "bits": 12,
+          "scale": 0.1,
+          "offset": -40,
+          "unit": "Cel",
+          "endian": "little"
+        },
+        {
+          "name": "hum",
+          "type": "uint",
+          "bits": 7,
+          "unit": "%",
+          "max": 100
+        },
+        {
+          "name": "alarm",
+          "type": "bool"
+        },
+        {
+          "name": "pad",
+          "type": "uint",
+          "bits": 4,
+          "hidden": true
+        },
+        {
+          "name": "s64",
+          "type": "int",
+          "bits": 64
+        },
+        {
+          "name": "u64",
+          "type": "uint",
+          "bits": 64
+        },
+        {
+          "name": "u48",
+          "type": "uint",
+          "bits": 48
+        },
+        {
+          "name": "small",
+          "type": "int",
+          "bits": 5
+        },
+        {
+          "name": "tiny",
+          "type": "uint",
+          "bits": 3
+        }
+      ]
+    },
+    {
+      "name": "nested",
+      "when": {
+        "topic": "devices/#"
+      },
+      "fields": [
+        {
+          "kind": "group",
+          "name": "header",
+          "fields": [
+            {
+              "name": "n",
+              "type": "uint",
+              "bits": 8
+            },
+            {
+              "name": "kind",
+              "type": "uint",
+              "bits": 8,
+              "enum": {
+                "3": "multi"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "repeat",
+          "name": "items",
+          "count": {
+            "ref": "header.n"
+          },
+          "fields": [
+            {
+              "name": "tag",
+              "type": "uint",
+              "bits": 8
+            },
+            {
+              "kind": "switch",
+              "name": "payload",
+              "on": "tag",
+              "cases": {
+                "16": [
+                  {
+                    "name": "a",
+                    "type": "uint",
+                    "bits": 16
+                  }
+                ],
+                "17": [
+                  {
+                    "kind": "group",
+                    "name": "g",
+                    "fields": [
+                      {
+                        "name": "b",
+                        "type": "uint",
+                        "bits": 16
+                      },
+                      {
+                        "name": "k",
+                        "type": "uint",
+                        "bits": 8,
+                        "enum": {
+                          "5": "five"
+                        }
+                      }
+                    ]
+                  }
+                ],
+                "32": [
+                  {
+                    "name": "c",
+                    "type": "int",
+                    "bits": 16
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "kind": "switch",
+          "name": "tail",
+          "on": "header.kind",
+          "cases": {
+            "3": [
+              {
+                "name": "last",
+                "type": "uint",
+                "bits": 8,
+                "scale": 0.5
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "vectors": [
+    {
+      "name": "unaligned bits + 64-bit",
+      "topic": "devices/abc/up",
+      "hex": "28ff10ffffffffffffffffffffffffffffffff123456789abcb5",
+      "message": "sensor",
+      "data": {
+        "temp": 25.5,
+        "hum": 120,
+        "alarm": true,
+        "s64": -1,
+        "u64": "18446744073709551615",
+        "u48": 20015998343868,
+        "small": -10,
+        "tiny": 5
+      }
+    },
+    {
+      "name": "nested group repeat switch dotpath",
+      "topic": "devices/x/y/z",
+      "hex": "02031001021100050507",
+      "message": "nested",
+      "data": {
+        "header": {
+          "n": 2,
+          "kind": "multi"
+        },
+        "items": [
+          {
+            "tag": 16,
+            "a": 258
+          },
+          {
+            "tag": 17,
+            "g": {
+              "b": 5,
+              "k": "five"
+            }
+          }
+        ],
+        "last": 3.5
+      }
+    }
+  ]
+}

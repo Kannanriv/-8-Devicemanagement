@@ -1,0 +1,255 @@
+{
+  "dcs": "1.0",
+  "id": "test.meter",
+  "version": "0.3.1",
+  "device": {
+    "vendor": "Test",
+    "model": "Meter",
+    "protocols": [
+      "lorawan"
+    ]
+  },
+  "defaults": {
+    "endian": "little"
+  },
+  "uplink": [
+    {
+      "name": "reading",
+      "when": {
+        "port": 10
+      },
+      "fields": [
+        {
+          "name": "seq",
+          "type": "uint",
+          "bits": 16
+        },
+        {
+          "kind": "group",
+          "name": "energy",
+          "fields": [
+            {
+              "name": "import",
+              "type": "uint",
+              "bits": 32,
+              "scale": 0.001,
+              "decimals": 3,
+              "unit": "kW.h",
+              "description": "Imported active energy"
+            },
+            {
+              "name": "power",
+              "type": "int",
+              "bits": 16,
+              "scale": 0.1,
+              "unit": "W"
+            }
+          ]
+        },
+        {
+          "name": "count",
+          "type": "uint",
+          "bits": 8,
+          "hidden": true
+        },
+        {
+          "kind": "repeat",
+          "name": "channels",
+          "count": {
+            "ref": "count"
+          },
+          "fields": [
+            {
+              "name": "id",
+              "type": "uint",
+              "bits": 8
+            },
+            {
+              "name": "value",
+              "type": "uint",
+              "bits": 16,
+              "endian": "big"
+            }
+          ]
+        },
+        {
+          "kind": "checksum",
+          "name": "crc",
+          "algo": "crc16-modbus"
+        }
+      ]
+    },
+    {
+      "name": "history",
+      "when": {
+        "port": 11
+      },
+      "fields": [
+        {
+          "kind": "repeat",
+          "name": "entries",
+          "count": "remaining",
+          "fields": [
+            {
+              "name": "ts",
+              "type": "uint",
+              "bits": 32
+            },
+            {
+              "name": "t",
+              "type": "int",
+              "bits": 16,
+              "scale": 0.01,
+              "unit": "Cel"
+            }
+          ]
+        },
+        {
+          "kind": "checksum",
+          "name": "sum",
+          "algo": "sum8"
+        }
+      ]
+    },
+    {
+      "name": "raw",
+      "when": {
+        "port": [
+          10,
+          11
+        ]
+      },
+      "fields": [
+        {
+          "name": "payload",
+          "type": "bytes",
+          "length": "remaining"
+        }
+      ]
+    }
+  ],
+  "downlink": [
+    {
+      "name": "setInterval",
+      "when": {
+        "port": [
+          30,
+          31
+        ]
+      },
+      "fields": [
+        {
+          "name": "minutes",
+          "type": "uint",
+          "bits": 16
+        },
+        {
+          "name": "retries",
+          "type": "uint",
+          "bits": 8,
+          "default": 5
+        },
+        {
+          "name": "flags",
+          "type": "uint",
+          "bits": 8
+        },
+        {
+          "kind": "checksum",
+          "name": "crc",
+          "algo": "crc8"
+        }
+      ]
+    },
+    {
+      "name": "reboot",
+      "when": {
+        "port": 32
+      },
+      "fields": [
+        {
+          "kind": "const",
+          "name": "op",
+          "bits": 8,
+          "value": 255
+        },
+        {
+          "name": "delay",
+          "type": "uint",
+          "bits": 8
+        }
+      ]
+    }
+  ],
+  "vectors": [
+    {
+      "name": "reading LE with ref repeat",
+      "port": 10,
+      "hex": "010287d612002efb020103e80207d089be",
+      "message": "reading",
+      "data": {
+        "seq": 513,
+        "energy": {
+          "import": 1234.567,
+          "power": -123.4
+        },
+        "channels": [
+          {
+            "id": 1,
+            "value": 1000
+          },
+          {
+            "id": 2,
+            "value": 2000
+          }
+        ]
+      }
+    },
+    {
+      "name": "bad crc falls through",
+      "port": 10,
+      "hex": "010287d612002efb020103e80207d076be",
+      "message": "raw",
+      "data": {
+        "payload": "010287d612002efb020103e80207d076be"
+      }
+    },
+    {
+      "name": "history remaining",
+      "port": 11,
+      "hex": "00f1536529093cf153656aff29",
+      "message": "history",
+      "data": {
+        "entries": [
+          {
+            "ts": 1700000000,
+            "t": 23.45
+          },
+          {
+            "ts": 1700000060,
+            "t": -1.5
+          }
+        ]
+      }
+    },
+    {
+      "name": "set interval default",
+      "direction": "downlink",
+      "hex": "0100050742",
+      "message": "setInterval",
+      "data": {
+        "minutes": 1,
+        "flags": 7
+      }
+    },
+    {
+      "name": "reboot",
+      "direction": "downlink",
+      "hex": "ff0a",
+      "message": "reboot",
+      "data": {
+        "delay": 10
+      }
+    }
+  ]
+}

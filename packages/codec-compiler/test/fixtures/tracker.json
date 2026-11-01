@@ -1,0 +1,334 @@
+{
+  "dcs": "1.0",
+  "id": "test.tracker",
+  "version": "1.2.0",
+  "device": {
+    "vendor": "Test",
+    "model": "Tracker",
+    "protocols": [
+      "mqtt",
+      "udp"
+    ],
+    "description": "GPS tracker fixture"
+  },
+  "defaults": {
+    "endian": "big"
+  },
+  "uplink": [
+    {
+      "name": "position",
+      "description": "Periodic GPS fix",
+      "when": {
+        "port": 1
+      },
+      "fields": [
+        {
+          "kind": "const",
+          "name": "magic",
+          "bits": 8,
+          "value": 165
+        },
+        {
+          "name": "version",
+          "type": "uint",
+          "bits": 4
+        },
+        {
+          "name": "moving",
+          "type": "bool",
+          "description": "Device in motion"
+        },
+        {
+          "name": "reserved",
+          "type": "uint",
+          "bits": 3,
+          "hidden": true
+        },
+        {
+          "name": "latitude",
+          "type": "int",
+          "bits": 32,
+          "scale": 1e-7,
+          "unit": "deg",
+          "min": -90,
+          "max": 90
+        },
+        {
+          "name": "longitude",
+          "type": "int",
+          "bits": 32,
+          "scale": 1e-7,
+          "unit": "deg",
+          "min": -180,
+          "max": 180
+        },
+        {
+          "name": "battery",
+          "type": "uint",
+          "bits": 8,
+          "scale": 0.02,
+          "offset": 2,
+          "decimals": 2,
+          "unit": "V",
+          "description": "Battery voltage"
+        },
+        {
+          "name": "status",
+          "type": "uint",
+          "bits": 8,
+          "enum": {
+            "0": "ok",
+            "1": "low_battery",
+            "2": "fault"
+          }
+        },
+        {
+          "kind": "checksum",
+          "name": "crc",
+          "algo": "crc16-ccitt"
+        }
+      ]
+    },
+    {
+      "name": "event",
+      "when": {
+        "port": [
+          2,
+          4
+        ]
+      },
+      "fields": [
+        {
+          "name": "type",
+          "type": "uint",
+          "bits": 8,
+          "enum": {
+            "1": "alarm",
+            "2": "heartbeat"
+          }
+        },
+        {
+          "kind": "switch",
+          "name": "body",
+          "on": "type",
+          "cases": {
+            "1": [
+              {
+                "name": "code",
+                "type": "uint",
+                "bits": 16
+              }
+            ],
+            "0x02": [
+              {
+                "name": "uptime",
+                "type": "uint",
+                "bits": 32,
+                "unit": "s"
+              }
+            ]
+          },
+          "default": [
+            {
+              "name": "raw",
+              "type": "bytes",
+              "length": "remaining"
+            }
+          ]
+        },
+        {
+          "kind": "checksum",
+          "name": "chk",
+          "algo": "xor8"
+        }
+      ]
+    },
+    {
+      "name": "info",
+      "when": {
+        "port": 3
+      },
+      "fields": [
+        {
+          "name": "imei",
+          "type": "bcd",
+          "length": 8
+        },
+        {
+          "name": "firmware",
+          "type": "string",
+          "length": 8
+        },
+        {
+          "name": "serial",
+          "type": "bytes",
+          "length": 4
+        },
+        {
+          "name": "temperature",
+          "type": "float",
+          "bits": 32,
+          "unit": "Cel"
+        },
+        {
+          "name": "precise",
+          "type": "float",
+          "bits": 64
+        },
+        {
+          "kind": "checksum",
+          "name": "crc",
+          "algo": "crc32"
+        }
+      ]
+    },
+    {
+      "name": "check",
+      "when": {
+        "port": 9
+      },
+      "fields": [
+        {
+          "name": "text",
+          "type": "string",
+          "length": 9
+        },
+        {
+          "kind": "checksum",
+          "name": "c",
+          "algo": "crc8"
+        }
+      ]
+    }
+  ],
+  "downlink": [
+    {
+      "name": "setMode",
+      "when": {
+        "port": 20
+      },
+      "fields": [
+        {
+          "kind": "const",
+          "name": "cmd",
+          "bits": 8,
+          "value": 1
+        },
+        {
+          "name": "mode",
+          "type": "uint",
+          "bits": 8,
+          "enum": {
+            "0": "off",
+            "1": "eco",
+            "2": "full"
+          }
+        },
+        {
+          "name": "interval",
+          "type": "uint",
+          "bits": 16,
+          "scale": 60,
+          "unit": "s"
+        },
+        {
+          "kind": "checksum",
+          "name": "crc",
+          "algo": "crc16-ccitt"
+        }
+      ]
+    }
+  ],
+  "vectors": [
+    {
+      "name": "position fix",
+      "port": 1,
+      "hex": "a5381f335115ffed29794b01c7e4",
+      "message": "position",
+      "data": {
+        "version": 3,
+        "moving": true,
+        "latitude": 52.3456789,
+        "longitude": -0.1234567,
+        "battery": 3.5,
+        "status": "low_battery"
+      }
+    },
+    {
+      "name": "unknown enum",
+      "port": 1,
+      "hex": "a5381f335115ffed29794b07a722",
+      "message": "position",
+      "data": {
+        "version": 3,
+        "moving": true,
+        "latitude": 52.3456789,
+        "longitude": -0.1234567,
+        "battery": 3.5,
+        "status": 7
+      }
+    },
+    {
+      "name": "switch case 1",
+      "port": 2,
+      "hex": "01123427",
+      "message": "event",
+      "data": {
+        "type": "alarm",
+        "code": 4660
+      }
+    },
+    {
+      "name": "switch hex key",
+      "port": 4,
+      "hex": "0200015180d2",
+      "message": "event",
+      "data": {
+        "type": "heartbeat",
+        "uptime": 86400
+      }
+    },
+    {
+      "name": "switch default",
+      "port": 2,
+      "hex": "09dead7a",
+      "message": "event",
+      "data": {
+        "type": 9,
+        "raw": "dead"
+      }
+    },
+    {
+      "name": "info strings floats",
+      "port": 3,
+      "hex": "356912345678901f312e322e33000000cafebabe41ac0000bff4000000000000c976c12f",
+      "message": "info",
+      "data": {
+        "imei": "356912345678901",
+        "firmware": "1.2.3",
+        "serial": "cafebabe",
+        "temperature": 21.5,
+        "precise": -1.25
+      }
+    },
+    {
+      "name": "crc8 check value",
+      "port": 9,
+      "hex": "313233343536373839f4",
+      "message": "check",
+      "data": {
+        "text": "123456789"
+      }
+    },
+    {
+      "name": "set mode",
+      "direction": "downlink",
+      "hex": "0102000f6dfb",
+      "message": "setMode",
+      "data": {
+        "mode": "full",
+        "interval": 900
+      }
+    }
+  ]
+}
