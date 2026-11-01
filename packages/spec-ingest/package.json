@@ -12,5 +12,5 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {"@hash8/dcs-schema":"*","exceljs":"^4.4.0"},
-  "devDependencies": {}
+  "devDependencies": {"@hash8/codec-runtime":"*"}
 }

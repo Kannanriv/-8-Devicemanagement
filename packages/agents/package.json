@@ -11,6 +11,6 @@
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": {"@hash8/dcs-schema":"*","@hash8/codec-runtime":"*","@hash8/spec-ingest":"*","@anthropic-ai/sdk":"latest","zod":"^3.25.0"},
+  "dependencies": {"@hash8/dcs-schema":"*","@hash8/codec-runtime":"*","@hash8/spec-ingest":"*","@hash8/sdk-ts":"*","@anthropic-ai/sdk":"latest","zod":"^3.25.0"},
   "devDependencies": {}
 }

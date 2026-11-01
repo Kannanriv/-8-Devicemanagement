@@ -1,0 +1,11 @@
+export { createAgentRegistry, Orchestrator, keywordRoute, describeAction, AGENTS } from "./registry";
+export { createAnthropicLlm, completeJson, extractJson, LlmRefusalError, DEFAULT_MODEL, FAST_MODEL } from "./llm";
+export type { LlmClient, LlmRequest, LlmResponse, LlmTool, LlmToolUse, LlmMessage, JsonResult } from "./llm";
+export type { AgentTools, AgentDeps, AgentRegistry, AgentContext, AgentDef, AgentOutcome, AgentStep, PendingAction, RunOptions } from "./types";
+export { detectSeries } from "./agents/anomaly-sentinel";
+export type { Anomaly } from "./agents/anomaly-sentinel";
+export { synthData } from "./agents/codec-verifier";
+export type { Finding } from "./agents/codec-verifier";
+export type { RolloutDecision } from "./agents/rollout-guardian";
+export { textToGrids } from "./agents/spec-extractor";
+export { COPILOT_TOOLS } from "./agents/fleet-copilot";
