@@ -55,3 +55,18 @@ Lifecycle: registered → assigned → installing → pending_activation → act
 | 11 History | GET `/devices/:id/timeline?kinds=lifecycle,config,ownership,technician,command,association` | `TimelineEvent[]` |
 | 12 Security | GET `/devices/:id/credentials` · POST `/devices/:id/credentials` (issue X.509 from dev CA) · POST `/credentials/:id/revoke` `{reason}` · GET `/security/overview` (expiring/expired/revoked counts, tenant isolation checks) | `DeviceCredential` |
 | 13 Reports | GET `/reports/fleet?from&to` | `FleetReport` |
+
+## v1.2 — Device Ecosystem
+| Method & path | Returns |
+|---|---|
+| GET `/ecosystem/overview` | `EcosystemOverview` |
+| GET `/ecosystem/partners?kind&tier&q` · GET `/ecosystem/partners/:id` | `EcosystemPartner` (+ models) |
+| GET `/ecosystem/catalog?q&category&protocol&connectivity&level&partnerId` · GET `/ecosystem/catalog/:id` | `CatalogModel` |
+| POST `/ecosystem/catalog` (OEM lists a model; optional codecId) | `CatalogModel` |
+| POST `/ecosystem/catalog/:id/certify` `{targetLevel}` → runs real checks | `CertificationRun` |
+| GET `/ecosystem/certifications?status` · GET `/ecosystem/certifications/:id` | `CertificationRun` |
+| POST `/ecosystem/catalog/:id/adopt` (solution company adds model to its fleet models + subscribes to codec) | `{modelId, subscription}` |
+| GET `/ecosystem/releases?codecId` | `CodecRelease[]` |
+| GET/POST `/ecosystem/subscriptions` · DELETE `/ecosystem/subscriptions/:id` | `CodecSubscription` |
+| GET `/ecosystem/compatibility?modelId` | `CompatibilityEntry[]` matrix |
+| GET `/ecosystem/graph` | `EcosystemGraph` |

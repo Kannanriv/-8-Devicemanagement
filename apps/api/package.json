@@ -9,10 +9,11 @@
   "types": "./src/index.ts",
   "scripts": {
     "test": "vitest run --passWithNoTests",
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx watch src/index.ts --sim",
+    "seed:reset": "tsx src/seed/reset.ts",
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": {"@hash8/dcs-schema":"*","@hash8/codec-runtime":"*","@hash8/codec-compiler":"*","@hash8/spec-ingest":"*","@hash8/agents":"*","@hash8/ops-engine":"*","@hash8/sdk-ts":"*","fastify":"^5.4.0","@fastify/cors":"^11.0.0","@fastify/multipart":"^9.0.0","@fastify/websocket":"^11.0.0","@electric-sql/pglite":"^0.3.0","aedes":"^0.51.0","mqtt":"^5.10.0","pino":"^9.6.0","zod":"^3.25.0"},
+  "dependencies": {"@hash8/dcs-schema":"*","@hash8/codec-runtime":"*","@hash8/codec-compiler":"*","@hash8/spec-ingest":"*","@hash8/agents":"*","@hash8/ops-engine":"*","@hash8/ecosystem":"*","@hash8/sdk-ts":"*","fastify":"^5.4.0","@fastify/cors":"^11.0.0","@fastify/multipart":"^9.0.0","@fastify/websocket":"^11.0.0","@electric-sql/pglite":"^0.3.0","aedes":"^0.51.0","mqtt":"^5.10.0","pino":"^9.6.0","zod":"^3.25.0"},
   "devDependencies": {"pino-pretty":"^13.0.0"}
 }

@@ -528,3 +528,100 @@ export interface AgentRun {
   steps: { at: string; agent: AgentName; note: string }[];
   createdAt: string;
 }
+
+// ── Device Ecosystem ───────────────────────────────────────────────────────
+// OEMs publish certified device models with a verified codec; solution companies
+// discover, adopt and subscribe to codec releases — replacing Excel spec handoffs.
+export type PartnerKind = "oem" | "distributor" | "solution_provider" | "connectivity" | "installer" | "app_developer";
+export type PartnerTier = "registered" | "verified" | "premier";
+export interface EcosystemPartner {
+  id: string;
+  name: string;
+  kind: PartnerKind;
+  tier: PartnerTier;
+  country?: string;
+  website?: string;
+  description?: string;
+  tenantId?: string; // when the partner is also a platform tenant
+  modelsCount: number;
+  joinedAt: string;
+}
+
+export type CertificationLevel = "listed" | "codec_verified" | "ota_ready" | "secure" | "hash8_certified";
+export type CompatibilityStatus = "certified" | "compatible" | "untested" | "incompatible";
+export interface CompatibilityEntry {
+  target: string; // "hash8-gateway" | "ttn" | "chirpstack" | "airtel" | "jio" | "hash8-crm" ...
+  label: string;
+  kind: "network" | "gateway" | "carrier" | "platform" | "hash8-product";
+  status: CompatibilityStatus;
+  note?: string;
+}
+
+export interface CatalogModel {
+  id: string;
+  partnerId: string;
+  vendor: string;
+  name: string;
+  category: string; // tracker | energy-meter | environment | telematics | water-meter | gateway ...
+  description: string;
+  protocols: string[]; // mqtt, lorawan, coap, lwm2m, udp, http
+  connectivity: string[]; // lte-m, nb-iot, 4g, lorawan, wifi, ble
+  powerSource: "battery" | "mains" | "vehicle" | "solar";
+  ipRating?: string;
+  latestFirmware?: string;
+  codecId?: string;
+  codecVersion?: string;
+  pluginTargets: PluginTarget[];
+  certification: { level: CertificationLevel; badges: CertificationLevel[]; certifiedAt?: string; expiresAt?: string };
+  compatibility: CompatibilityEntry[];
+  adoption: { devices: number; customers: number; pluginDownloads: number };
+  tags: string[];
+  createdAt: string;
+}
+
+export type CertificationStepName = "spec_import" | "codec_vectors" | "plugin_conformance" | "security_review" | "ota_dry_run" | "interop";
+export interface CertificationRun {
+  id: string;
+  modelId: string;
+  partnerId: string;
+  targetLevel: CertificationLevel;
+  status: "submitted" | "running" | "passed" | "failed" | "changes_requested";
+  steps: { name: CertificationStepName; status: "pending" | "running" | "passed" | "failed" | "skipped"; detail?: string; at?: string }[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CodecRelease {
+  codecId: string;
+  version: string;
+  previous?: string;
+  breaking: boolean;
+  changes: string[]; // human-readable field-level diff
+  firmware?: string;
+  publishedAt: string;
+  subscribers: number;
+}
+export interface CodecSubscription {
+  id: string;
+  tenantId: string;
+  codecId: string;
+  channel: "webhook" | "email" | "in_app";
+  autoUpgrade: "none" | "minor" | "all"; // auto-apply non-breaking releases to my fleet
+  createdAt: string;
+}
+
+export interface EcosystemOverview {
+  partners: number;
+  oems: number;
+  certifiedModels: number;
+  catalogModels: number;
+  codecs: number;
+  pluginDownloads: number;
+  devicesOnCertifiedModels: number;
+  releases30d: number;
+  pendingCertifications: number;
+}
+export interface EcosystemGraph {
+  nodes: { id: string; label: string; kind: "partner" | "model" | "codec" | "customer" | "product"; size: number }[];
+  links: { source: string; target: string; kind: string }[];
+}
