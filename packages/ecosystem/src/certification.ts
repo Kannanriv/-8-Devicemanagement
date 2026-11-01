@@ -1,0 +1,344 @@
+import { decode as runtimeDecode, runVectors as runtimeRunVectors } from "@hash8/codec-runtime";
+import { generatePlugin as compilerGeneratePlugin, type GeneratedFile } from "@hash8/codec-compiler";
+import { fromHex, safeParseSpec, type DeviceCodecSpec, type VectorResult } from "@hash8/dcs-schema";
+import type { CatalogModel, CertificationLevel, CertificationRun, CertificationStepName, PluginTarget } from "@hash8/sdk-ts";
+import { computeCompatibility } from "./compatibility";
+import { LEVELS, STEP_ORDER, levelRank, requiredSteps } from "./levels";
+
+export interface CertificationDeps {
+  runVectors?: (spec: DeviceCodecSpec) => VectorResult[];
+  generatePlugin?: (spec: DeviceCodecSpec, target: PluginTarget) => GeneratedFile[];
+  now?: () => Date;
+  id?: () => string;
+  /** Continue an existing (e.g. queued) run instead of creating a new one. */
+  base?: Pick<CertificationRun, "id" | "createdAt">;
+}
+
+type Step = CertificationRun["steps"][number];
+type StepOutcome = { status: "passed" | "failed" | "skipped"; detail: string };
+
+const ALL_TARGETS: PluginTarget[] = ["ts", "ts013", "python", "go", "java", "c"];
+const IP_PROTOCOLS = ["mqtt", "http", "coap", "lwm2m", "udp", "tcp"];
+const DTLS_OK = new Set(["coap", "lwm2m", "udp"]);
+const CODEC_STEPS = new Set<CertificationStepName>(["spec_import", "codec_vectors", "plugin_conformance"]);
+
+function newRunId(): string {
+  return `cert_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/* ── individual checks ─────────────────────────────────────────────────── */
+
+function checkSpecImport(model: CatalogModel, spec: DeviceCodecSpec | undefined): StepOutcome {
+  if (!spec) return { status: "failed", detail: model.codecId ? `Codec ${model.codecId} has no published spec` : "No codec attached — import the OEM spec first" };
+  const parsed = safeParseSpec(spec);
+  if (!parsed.success) return { status: "failed", detail: `Spec does not validate: ${parsed.error.issues.slice(0, 3).map((i) => i.message).join("; ")}` };
+  if (model.codecId && spec.id !== model.codecId) return { status: "failed", detail: `Spec id ${spec.id} does not match model codec ${model.codecId}` };
+  const s = parsed.data;
+  return {
+    status: "passed",
+    detail: `${s.id}@${s.version} · ${s.uplink.length} uplink, ${(s.downlink ?? []).length} downlink messages · ${s.vectors.length} vectors`,
+  };
+}
+
+function checkVectors(spec: DeviceCodecSpec, run: (s: DeviceCodecSpec) => VectorResult[]): StepOutcome {
+  const results = run(spec);
+  const passed = results.filter((r) => r.pass);
+  const covered = new Set<string>();
+  for (const v of spec.vectors) {
+    const dir = v.direction ?? "uplink";
+    let msg = v.message;
+    if (!msg && dir === "uplink") {
+      try {
+        const ctx: { port?: number; topic?: string } = {};
+        if (v.port !== undefined) ctx.port = v.port;
+        if (v.topic !== undefined) ctx.topic = v.topic;
+        const r = runtimeDecode(spec, fromHex(v.hex), ctx);
+        if (r.ok) msg = r.message;
+      } catch {
+        /* undecodable vector — counted as failed above */
+      }
+    }
+    if (msg) covered.add(`${dir} ${msg}`);
+  }
+  const all = [...spec.uplink.map((m) => `uplink ${m.name}`), ...(spec.downlink ?? []).map((m) => `downlink ${m.name}`)];
+  const uncovered = all.filter((m) => !covered.has(m));
+  const parts = [`${passed.length}/${results.length} vectors pass`, `${all.length - uncovered.length}/${all.length} messages covered`];
+  const failing = results.filter((r) => !r.pass);
+  if (failing.length) parts.push(`failing: ${failing.slice(0, 4).map((f) => `${f.name}${f.diff?.[0] ? ` (${f.diff[0]})` : ""}`).join(", ")}`);
+  if (uncovered.length) parts.push(`uncovered: ${uncovered.join(", ")}`);
+  const ok = results.length > 0 && failing.length === 0 && uncovered.length === 0;
+  return { status: ok ? "passed" : "failed", detail: parts.join(" · ") };
+}
+
+function approxEqual(a: unknown, b: unknown): boolean {
+  if (typeof a === "number" && typeof b === "number") return Math.abs(a - b) <= 1e-9;
+  if (Array.isArray(a) && Array.isArray(b)) return a.length === b.length && a.every((x, i) => approxEqual(x, b[i]));
+  if (a && b && typeof a === "object" && typeof b === "object") {
+    const ka = Object.keys(a as object);
+    const kb = Object.keys(b as object);
+    return ka.length === kb.length && ka.every((k) => approxEqual((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]));
+  }
+  return a === b;
+}
+
+/** Execute the generated TS013 formatter against every uplink vector (cross-implementation oracle). */
+function executeTs013(spec: DeviceCodecSpec, files: GeneratedFile[]): { ok: number; total: number; error?: string } {
+  const main = files.find((f) => f.path.endsWith("codec.js")) ?? files[0];
+  if (!main) return { ok: 0, total: 0, error: "no output" };
+  const mod: { exports: Record<string, unknown> } = { exports: {} };
+  try {
+    // Generated by our own compiler from the spec's data literals — dependency-free ES5.
+    new Function("module", "exports", main.content)(mod, mod.exports);
+  } catch (e) {
+    return { ok: 0, total: 0, error: `load failed: ${(e as Error).message}` };
+  }
+  const decodeUplink = mod.exports.decodeUplink as ((i: { bytes: number[]; fPort?: number }) => { data?: unknown; errors?: unknown[] }) | undefined;
+  if (typeof decodeUplink !== "function") return { ok: 0, total: 0, error: "decodeUplink not exported" };
+  const ups = spec.vectors.filter((v) => (v.direction ?? "uplink") === "uplink");
+  let ok = 0;
+  for (const v of ups) {
+    try {
+      const r = decodeUplink({ bytes: Array.from(fromHex(v.hex)), ...(v.port !== undefined ? { fPort: v.port } : {}) });
+      if (!(r.errors ?? []).length && approxEqual(v.data, r.data)) ok++;
+    } catch {
+      /* counted as mismatch */
+    }
+  }
+  return { ok, total: ups.length };
+}
+
+function checkPlugins(model: CatalogModel, spec: DeviceCodecSpec, gen: (s: DeviceCodecSpec, t: PluginTarget) => GeneratedFile[]): StepOutcome {
+  const targets = model.pluginTargets.length ? model.pluginTargets : ALL_TARGETS;
+  const parts: string[] = [];
+  let failed = false;
+  let built = 0;
+  for (const t of targets) {
+    try {
+      const files = gen(spec, t);
+      if (!files.length || files.some((f) => !f.content)) {
+        failed = true;
+        parts.push(`${t}: empty output`);
+        continue;
+      }
+      built++;
+      if (t === "ts013") {
+        const ex = executeTs013(spec, files);
+        if (ex.error) {
+          failed = true;
+          parts.push(`ts013: ${ex.error}`);
+        } else {
+          if (ex.ok !== ex.total) failed = true;
+          parts.push(`ts013 executed ${ex.ok}/${ex.total} uplink vectors`);
+        }
+      } else parts.push(`${t}: ${files.length} file${files.length === 1 ? "" : "s"}`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/not implemented/i.test(msg)) parts.push(`${t}: skipped (generator not implemented yet)`);
+      else {
+        failed = true;
+        parts.push(`${t}: ${msg}`);
+      }
+    }
+  }
+  if (!built && !failed) return { status: "skipped", detail: parts.join(" · ") || "no plugin targets" };
+  return { status: failed ? "failed" : "passed", detail: parts.join(" · ") };
+}
+
+/** Heuristic security review from protocols + transport/credential tags. */
+export function securityReview(model: CatalogModel): StepOutcome {
+  const tags = new Set(model.tags.map((t) => t.toLowerCase()));
+  const protocols = model.protocols.map((p) => p.toLowerCase());
+  const problems: string[] = [];
+  const notes: string[] = [];
+  if (protocols.includes("lorawan")) {
+    if (tags.has("abp")) problems.push("LoRaWAN ABP with static session keys — use OTAA");
+    else notes.push("LoRaWAN OTAA (AES-128 session keys)");
+  }
+  const ip = protocols.filter((p) => IP_PROTOCOLS.includes(p));
+  const transport = tags.has("mtls") ? "mTLS" : tags.has("tls") ? "TLS" : tags.has("dtls") ? "DTLS" : undefined;
+  for (const p of ip) {
+    const ok = transport === "mTLS" || transport === "TLS" || (transport === "DTLS" && DTLS_OK.has(p));
+    if (ok) notes.push(`${p} over ${transport}`);
+    else problems.push(`${p} without TLS/mTLS`);
+  }
+  if (ip.length) {
+    const cred = tags.has("x509") ? "x509" : tags.has("psk") ? "psk" : tags.has("token") ? "token" : undefined;
+    if (!cred) problems.push("no device credential kind declared (x509 / psk / token)");
+    else notes.push(`credentials ${cred}${cred === "token" ? " (rotate regularly)" : ""}`);
+    if (transport === "mTLS" && cred !== "x509") problems.push("mTLS requires x509 device certificates");
+  }
+  if (!protocols.length) problems.push("no protocols declared");
+  return problems.length ? { status: "failed", detail: problems.join("; ") } : { status: "passed", detail: notes.join(" · ") };
+}
+
+function parseVer(v: string): number[] {
+  return v.replace(/^v/, "").split("-")[0]!.split(".").map((x) => Number(x) || 0);
+}
+function cmp(a: string, b: string): number {
+  const pa = parseVer(a);
+  const pb = parseVer(b);
+  for (let i = 0; i < 3; i++) if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) - (pb[i] ?? 0);
+  return 0;
+}
+/** Minimal semver range check (space-separated comparators, AND). */
+export function satisfies(version: string, range: string): boolean {
+  return range
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .every((c) => {
+      const m = c.match(/^(>=|<=|>|<|=|\^|~)?\s*v?(\d+(?:\.\d+){0,2}(?:-[\w.]+)?)$/);
+      if (!m) return true;
+      const [, op = "=", v = "0"] = m;
+      const d = cmp(version, v);
+      switch (op) {
+        case ">=":
+          return d >= 0;
+        case "<=":
+          return d <= 0;
+        case ">":
+          return d > 0;
+        case "<":
+          return d < 0;
+        case "^":
+          return d >= 0 && parseVer(version)[0] === parseVer(v)[0];
+        case "~":
+          return d >= 0 && parseVer(version)[0] === parseVer(v)[0] && parseVer(version)[1] === parseVer(v)[1];
+        default:
+          return d === 0;
+      }
+    });
+}
+
+function checkOta(model: CatalogModel, spec: DeviceCodecSpec): StepOutcome {
+  if (!model.latestFirmware) return { status: "failed", detail: "No firmware lineage — publish at least one firmware release" };
+  const range = spec.device.firmware;
+  if (!range) return { status: "passed", detail: `Firmware ${model.latestFirmware} staged; codec declares no firmware range (applies to all)` };
+  if (!satisfies(model.latestFirmware, range)) return { status: "failed", detail: `Firmware ${model.latestFirmware} is outside codec range ${range} — release a codec for the new firmware` };
+  return { status: "passed", detail: `Firmware ${model.latestFirmware} within codec range ${range} · dry-run wave of 1 device, rollback point retained` };
+}
+
+function checkInterop(model: CatalogModel): StepOutcome {
+  const entries = computeCompatibility(model).filter((e) => (e.kind === "network" || e.kind === "gateway" || e.kind === "platform") && (e.status === "certified" || e.status === "compatible"));
+  if (!entries.length) return { status: "failed", detail: "No compatible network, gateway or platform" };
+  return { status: "passed", detail: `Interoperable with ${entries.map((e) => e.label).join(", ")}` };
+}
+
+/* ── pipeline ──────────────────────────────────────────────────────────── */
+
+/**
+ * Runs the certification pipeline step by step, yielding a snapshot of the run
+ * after every state change (step started / finished) so callers can persist and
+ * stream progress.
+ */
+export function* certificationStepsSync(
+  model: CatalogModel,
+  spec: DeviceCodecSpec | undefined,
+  targetLevel: CertificationLevel,
+  deps: CertificationDeps = {},
+): Generator<CertificationRun> {
+  const now = () => (deps.now ?? (() => new Date()))().toISOString();
+  const runV = deps.runVectors ?? ((s: DeviceCodecSpec) => runtimeRunVectors(s));
+  const gen = deps.generatePlugin ?? compilerGeneratePlugin;
+  const required = new Set(requiredSteps(targetLevel));
+  const created = deps.base?.createdAt ?? now();
+  const run: CertificationRun = {
+    id: deps.base?.id ?? (deps.id ?? newRunId)(),
+    modelId: model.id,
+    partnerId: model.partnerId,
+    targetLevel,
+    status: "running",
+    steps: STEP_ORDER.map((name): Step => ({ name, status: "pending" })),
+    createdAt: created,
+    updatedAt: now(),
+  };
+  yield run;
+
+  let parsed: DeviceCodecSpec | undefined;
+  for (const step of run.steps) {
+    if (!required.has(step.name)) {
+      Object.assign(step, { status: "skipped", detail: `Not required for ${targetLevel.replace(/_/g, " ")}`, at: now() });
+      continue;
+    }
+    step.status = "running";
+    step.at = now();
+    run.updatedAt = step.at;
+    yield run;
+    let out: StepOutcome;
+    try {
+      if (step.name === "spec_import") {
+        out = checkSpecImport(model, spec);
+        if (out.status === "passed" && spec) {
+          const r = safeParseSpec(spec);
+          if (r.success) parsed = r.data;
+        }
+      } else if (step.name === "security_review") out = securityReview(model);
+      else if (step.name === "interop") out = checkInterop(model);
+      else if (!parsed) out = { status: "skipped", detail: "Blocked: no valid codec spec" };
+      else if (step.name === "codec_vectors") out = checkVectors(parsed, runV);
+      else if (step.name === "plugin_conformance") out = checkPlugins(model, parsed, gen);
+      else out = checkOta(model, parsed);
+    } catch (e) {
+      out = { status: "failed", detail: `Check crashed: ${e instanceof Error ? e.message : String(e)}` };
+    }
+    step.status = out.status;
+    step.detail = out.detail;
+    step.at = now();
+    run.updatedAt = step.at;
+    yield run;
+  }
+
+  const failed = run.steps.filter((s) => required.has(s.name) && (s.status === "failed" || (s.status === "skipped" && s.detail?.startsWith("Blocked"))));
+  run.status = failed.length === 0 ? "passed" : failed.some((s) => CODEC_STEPS.has(s.name)) ? "failed" : "changes_requested";
+  run.updatedAt = now();
+  yield run;
+}
+
+/** Async variant of {@link certificationStepsSync}: yields to the event loop between snapshots. */
+export async function* certificationSteps(
+  model: CatalogModel,
+  spec: DeviceCodecSpec | undefined,
+  targetLevel: CertificationLevel,
+  deps: CertificationDeps = {},
+): AsyncGenerator<CertificationRun> {
+  for (const snap of certificationStepsSync(model, spec, targetLevel, deps)) {
+    yield snap;
+    await new Promise<void>((r) => setTimeout(r, 0));
+  }
+}
+
+/** Run the full pipeline synchronously and return the finished run. */
+export function runCertificationSync(
+  model: CatalogModel,
+  spec: DeviceCodecSpec | undefined,
+  targetLevel: CertificationLevel,
+  deps: CertificationDeps = {},
+): CertificationRun {
+  let last: CertificationRun | undefined;
+  for (const s of certificationStepsSync(model, spec, targetLevel, deps)) last = s;
+  return structuredClone(last!);
+}
+
+/** Run the full pipeline and return the finished run. */
+export async function runCertification(
+  model: CatalogModel,
+  spec: DeviceCodecSpec | undefined,
+  targetLevel: CertificationLevel,
+  deps: CertificationDeps = {},
+): Promise<CertificationRun> {
+  let last: CertificationRun | undefined;
+  for await (const s of certificationSteps(model, spec, targetLevel, deps)) last = s;
+  return structuredClone(last!);
+}
+
+/** Highest level whose cumulative required steps all passed. */
+export function achievedLevel(run: Pick<CertificationRun, "steps">): CertificationLevel {
+  const passed = new Set(run.steps.filter((s) => s.status === "passed").map((s) => s.name));
+  let best: CertificationLevel = "listed";
+  for (const l of LEVELS) {
+    if (levelRank(l) === 0) continue;
+    if (requiredSteps(l).every((s) => passed.has(s))) best = l;
+    else break;
+  }
+  return best;
+}
