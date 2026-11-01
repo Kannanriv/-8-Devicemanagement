@@ -1,0 +1,52 @@
+# syntax=docker/dockerfile:1.7-labs
+# #8 Device Management — API / ingest / decoder image.
+# Build from the repo root:  docker build -f infra/Dockerfile.api -t hash8/api .
+# Internal packages are consumed from TypeScript source (no build step), so the
+# runtime runs under tsx. One image, three roles (ROLE=api|ingest|decoder).
+
+ARG NODE_VERSION=22.20.0
+
+# ── 1. deps: install the workspace once, cached on manifests only ───────────
+FROM node:${NODE_VERSION}-bookworm-slim AS deps
+WORKDIR /app
+ENV CI=1 NEXT_TELEMETRY_DISABLED=1
+COPY package.json package-lock.json ./
+COPY --parents packages/*/package.json apps/*/package.json tools/*/package.json ./
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --no-audit --no-fund --ignore-scripts
+
+# ── 2. source: only what the API process needs ──────────────────────────────
+FROM deps AS source
+COPY tsconfig.base.json turbo.json ./
+COPY packages ./packages
+COPY apps/api ./apps/api
+COPY samples ./samples
+# fail the build on type errors in the API and its workspace deps
+RUN npx tsc -p apps/api/tsconfig.json --noEmit
+
+# ── 3. runtime: slim, non-root ──────────────────────────────────────────────
+FROM node:${NODE_VERSION}-bookworm-slim AS runtime
+ENV NODE_ENV=production \
+    HOST=0.0.0.0 \
+    PORT=4000 \
+    MQTT_PORT=1883 \
+    UDP_PORT=5684 \
+    DATA_DIR=/data \
+    ROLE=api \
+    NODE_OPTIONS="--enable-source-maps --max-old-space-size=768"
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends tini ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /data && chown node:node /data
+COPY --from=source --chown=node:node /app/node_modules ./node_modules
+COPY --from=source --chown=node:node /app/package.json /app/tsconfig.base.json ./
+COPY --from=source --chown=node:node /app/packages ./packages
+COPY --from=source --chown=node:node /app/apps/api ./apps/api
+COPY --from=source --chown=node:node /app/samples ./samples
+USER node
+VOLUME ["/data"]
+EXPOSE 4000 1883 5684/udp
+HEALTHCHECK --interval=15s --timeout=3s --start-period=30s --retries=4 \
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||4000)+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["node", "--import", "tsx", "apps/api/src/index.ts"]

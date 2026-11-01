@@ -1,0 +1,165 @@
+# Default values for hash8-dm. Sized for ~100k devices; see docs/architecture.md §Sizing
+# for the 1M-device / 1B-msg/day profile (values-production example at the bottom).
+
+global:
+  imageRegistry: ghcr.io/hash8
+  imagePullSecrets: []
+  # Tenant-facing hostnames
+  apiHost: api.dm.example.com
+  consoleHost: console.dm.example.com
+  mqttHost: mqtt.dm.example.com
+
+image:
+  api:
+    repository: hash8-dm-api       # same image runs ROLE=api|ingest|decoder
+    tag: ""                        # defaults to .Chart.AppVersion
+    pullPolicy: IfNotPresent
+  console:
+    repository: hash8-dm-console
+    tag: ""
+    pullPolicy: IfNotPresent
+
+serviceAccount:
+  create: true
+  annotations: {}                  # e.g. eks.amazonaws.com/role-arn for S3 firmware access
+
+# Connection settings for managed dependencies (rendered into the ConfigMap).
+externalServices:
+  kafkaBrokers: "kafka-0.kafka:9092,kafka-1.kafka:9092,kafka-2.kafka:9092"
+  kafkaTls: true
+  redisUrl: "rediss://redis-master:6379"
+  s3Endpoint: ""                   # empty = AWS default endpoint
+  s3Region: ap-south-1
+  firmwareBucket: hash8-firmware
+  rawArchiveBucket: hash8-raw-archive
+  otelEndpoint: "http://otel-collector.observability:4317"
+
+# Kafka topic contract (created by the platform team / Strimzi KafkaTopic CRs).
+topics:
+  raw: raw.v1
+  decoded: decoded.v1
+  unknown: unknown.v1
+  commands: commands.v1
+  ota: ota.v1
+  shadow: shadow.v1
+  dlq: dlq.v1
+
+config:
+  logLevel: info
+  seed: "false"
+  simTraffic: "false"
+  decoderConcurrency: "32"
+  codecCacheSize: "512"            # compiled codecs kept hot, keyed codecId@version
+  agentModel: ""                   # HASH8_AGENT_MODEL override; empty = package default
+
+# Secrets: never commit real values. Prefer an existing Secret (External Secrets /
+# Sealed Secrets / CSI driver) and set existingSecret.
+secrets:
+  existingSecret: ""
+  create: true
+  values:
+    DATABASE_URL: "postgres://hash8:CHANGE_ME@timescaledb:5432/hash8?sslmode=require"
+    ANTHROPIC_API_KEY: ""
+    S3_ACCESS_KEY: ""
+    S3_SECRET_KEY: ""
+    OTA_SIGNING_KEY_REF: "kms://projects/CHANGE_ME/keys/ota-ed25519"   # reference, not key material
+    JWT_SECRET: "CHANGE_ME"
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile: { type: RuntimeDefault }
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities: { drop: ["ALL"] }
+
+# ── Components ─────────────────────────────────────────────────────────────
+api:
+  enabled: true
+  replicas: 3
+  port: 4000
+  resources:
+    requests: { cpu: 500m, memory: 512Mi }
+    limits: { memory: 1Gi }
+  hpa: { enabled: true, minReplicas: 3, maxReplicas: 12, targetCPU: 65 }
+  pdb: { minAvailable: 2 }
+  nodeSelector: {}
+  tolerations: []
+
+# Protocol edge: MQTT/HTTP/UDP adapters. Stateless; publishes raw.v1 keyed by deviceId.
+ingest:
+  enabled: true
+  replicas: 3
+  ports: { http: 4000, mqtt: 1883, mqtts: 8883, udp: 5684 }
+  service:
+    type: LoadBalancer             # L4 for MQTT/UDP; NLB with proxy-protocol in AWS
+    annotations: {}
+    externalTrafficPolicy: Local   # preserve source IPs for per-device rate limiting
+  resources:
+    requests: { cpu: "1", memory: 768Mi }
+    limits: { memory: 1536Mi }
+  hpa: { enabled: true, minReplicas: 3, maxReplicas: 30, targetCPU: 60 }
+  pdb: { minAvailable: 2 }
+  nodeSelector: {}
+  tolerations: []
+
+# Decoder consumer group: raw.v1 → decoded.v1 / unknown.v1 + Timescale writes + Redis shadows.
+decoder:
+  enabled: true
+  replicas: 4
+  metricsPort: 9464
+  resources:
+    requests: { cpu: "1", memory: 512Mi }
+    limits: { memory: 1Gi }
+  # CPU HPA is the baseline. Kafka consumer lag is the better signal — enable KEDA below
+  # (and disable this HPA) in production. Never scale past raw.v1 partition count:
+  # extra consumers in a group sit idle.
+  hpa: { enabled: true, minReplicas: 4, maxReplicas: 48, targetCPU: 70 }
+  keda:
+    enabled: false
+    lagThreshold: "5000"           # messages of lag per replica before scaling out
+    minReplicas: 4
+    maxReplicas: 48
+  pdb: { maxUnavailable: 1 }
+  nodeSelector: {}
+  tolerations: []
+
+console:
+  enabled: true
+  replicas: 2
+  port: 3100
+  resources:
+    requests: { cpu: 200m, memory: 256Mi }
+    limits: { memory: 512Mi }
+  pdb: { minAvailable: 1 }
+  nodeSelector: {}
+  tolerations: []
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"   # WS /live
+  tls: true
+
+networkPolicy:
+  enabled: true
+  # Namespaces allowed to reach the API/console (ingress controller, monitoring).
+  ingressControllerNamespace: ingress-nginx
+  monitoringNamespace: observability
+  # Egress CIDRs for managed Postgres/Kafka/Redis/S3 (empty = allow all egress on their ports).
+  egressCIDRs: []
+
+metrics:
+  serviceMonitor: false            # set true with prometheus-operator
+
+# ── Production profile (1M devices, 1B msgs/day, peak ~58k msg/s) ──────────
+# ingest:  { replicas: 12, hpa: { minReplicas: 12, maxReplicas: 60 } }
+# decoder: { replicas: 16, hpa: { enabled: false }, keda: { enabled: true, minReplicas: 16, maxReplicas: 96 } }
+# api:     { replicas: 6,  hpa: { minReplicas: 6, maxReplicas: 24 } }
+# raw.v1 / decoded.v1: 96 partitions, RF=3, min.insync.replicas=2

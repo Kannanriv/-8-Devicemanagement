@@ -1,0 +1,109 @@
+{{- if .Values.api.enabled }}
+{{- $c := .Values.api }}
+# Control-plane REST API + WS /live. Protocol listeners are disabled here (see ingest.yaml).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "hash8-dm.fullname" . }}-api
+  labels:
+    {{- include "hash8-dm.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  {{- if not $c.hpa.enabled }}
+  replicas: {{ $c.replicas }}
+  {{- end }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxSurge: 25%, maxUnavailable: 0 }
+  selector:
+    matchLabels:
+      {{- include "hash8-dm.selector" (dict "root" . "component" "api") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "hash8-dm.labels" . | nindent 8 }}
+        app.kubernetes.io/component: api
+      annotations:
+        {{- include "hash8-dm.podAnnotations" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "hash8-dm.serviceAccountName" . }}
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      terminationGracePeriodSeconds: 30
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "hash8-dm.selector" (dict "root" . "component" "api") | nindent 14 }}
+      containers:
+        - name: api
+          image: {{ include "hash8-dm.image" (dict "root" . "which" "api") }}
+          imagePullPolicy: {{ .Values.image.api.pullPolicy }}
+          securityContext: {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          env:
+            {{- include "hash8-dm.apiEnv" (dict "root" . "role" "api") | nindent 12 }}
+            - name: TRANSPORTS
+              value: "false"
+          envFrom:
+            {{- include "hash8-dm.apiEnvFrom" . | nindent 12 }}
+          ports:
+            - { name: http, containerPort: {{ $c.port }}, protocol: TCP }
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            tcpSocket: { port: http }
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          startupProbe:
+            tcpSocket: { port: http }
+            failureThreshold: 30
+            periodSeconds: 2
+          resources: {{- toYaml $c.resources | nindent 12 }}
+          volumeMounts:
+            {{- include "hash8-dm.tmpMounts" . | nindent 12 }}
+      volumes:
+        {{- include "hash8-dm.tmpVolumes" . | nindent 8 }}
+      {{- with $c.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $c.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "hash8-dm.fullname" . }}-api
+  labels:
+    {{- include "hash8-dm.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "hash8-dm.selector" (dict "root" . "component" "api") | nindent 4 }}
+  ports:
+    - { name: http, port: 80, targetPort: http, protocol: TCP }
+{{- if $c.hpa.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "hash8-dm.fullname" . }}-api
+  labels:
+    {{- include "hash8-dm.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: {{ include "hash8-dm.fullname" . }}-api }
+  minReplicas: {{ $c.hpa.minReplicas }}
+  maxReplicas: {{ $c.hpa.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: {{ $c.hpa.targetCPU }} } }
+{{- end }}
+{{- end }}

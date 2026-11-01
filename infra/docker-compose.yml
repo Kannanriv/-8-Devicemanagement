@@ -1,0 +1,190 @@
+# #8 Device Management — full local stack.
+#
+#   docker compose -f infra/docker-compose.yml up -d --build
+#   docker compose -f infra/docker-compose.yml --profile broker up -d   # + standalone Mosquitto on :1884
+#
+# Console http://localhost:3100 · API http://localhost:4000 · MQTT :1883 · UDP :5684
+# Redpanda console-less: rpk via `docker compose exec redpanda rpk topic list`
+# MinIO http://localhost:9001 (minioadmin / minioadmin — dev only)
+#
+# The API still uses its embedded PGlite store, MQTT broker (aedes) and UDP listener.
+# Timescale, Redpanda, Redis and MinIO run here for the production pipeline
+# (docs/architecture.md); their connection strings are passed to the API already.
+
+name: hash8-dm
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "3" }
+
+services:
+  timescaledb:
+    image: timescale/timescaledb-ha:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: hash8
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hash8-dev-only}
+      POSTGRES_DB: hash8
+      TIMESCALEDB_TELEMETRY: "off"
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/home/postgres/pgdata
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hash8 -d hash8"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *logging
+
+  redpanda:
+    image: redpandadata/redpanda:v24.2.7
+    restart: unless-stopped
+    command:
+      - redpanda
+      - start
+      - --mode=dev-container
+      - --smp=1
+      - --memory=1G
+      - --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr=internal://redpanda:9092,external://localhost:19092
+      - --pandaproxy-addr=internal://0.0.0.0:8082,external://0.0.0.0:18082
+      - --advertise-pandaproxy-addr=internal://redpanda:8082,external://localhost:18082
+      - --schema-registry-addr=internal://0.0.0.0:8081,external://0.0.0.0:18081
+    ports: ["19092:19092", "18081:18081", "18082:18082", "9644:9644"]
+    volumes:
+      - redpanda:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy:.+true' || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    logging: *logging
+
+  # One-shot: create the event-bus topics (idempotent).
+  redpanda-init:
+    image: redpandadata/redpanda:v24.2.7
+    depends_on:
+      redpanda: { condition: service_healthy }
+    entrypoint: ["/bin/bash", "/init/topics.sh"]
+    environment:
+      RPK_BROKERS: redpanda:9092
+    volumes:
+      - ./redpanda/topics.sh:/init/topics.sh:ro
+    restart: "no"
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    ports: ["6379:6379"]
+    volumes:
+      - redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *logging
+
+  minio:
+    image: minio/minio:RELEASE.2024-10-13T13-34-11Z
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports: ["9000:9000", "9001:9001"]
+    volumes:
+      - minio:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *logging
+
+  # One-shot: firmware + payload-archive buckets.
+  minio-init:
+    image: minio/mc:RELEASE.2024-10-08T09-37-26Z
+    depends_on:
+      minio: { condition: service_healthy }
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        mc alias set local http://minio:9000 "$${MINIO_ROOT_USER:-minioadmin}" "$${MINIO_ROOT_PASSWORD:-minioadmin}" &&
+        mc mb --ignore-existing local/hash8-firmware &&
+        mc mb --ignore-existing local/hash8-raw-archive &&
+        mc version enable local/hash8-firmware
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    restart: "no"
+
+  # Standalone broker for edge experiments / bridging (the API embeds its own on :1883).
+  # Production uses VerneMQ or EMQX clusters behind an L4 load balancer.
+  mosquitto:
+    image: eclipse-mosquitto:2.0.20
+    profiles: ["broker"]
+    restart: unless-stopped
+    ports: ["1884:1883"]
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    logging: *logging
+
+  api:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.api
+    image: hash8/api:dev
+    restart: unless-stopped
+    depends_on:
+      timescaledb: { condition: service_healthy }
+      redpanda: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      minio: { condition: service_healthy }
+    environment:
+      PORT: "4000"
+      MQTT_PORT: "1883"
+      UDP_PORT: "5684"
+      DATA_DIR: /data
+      LOG_LEVEL: info
+      CONSOLE_ORIGINS: http://localhost:3100   # console port (3000 is commonly taken)
+      SEED: "true"
+      SIM_TRAFFIC: ${SIM_TRAFFIC:-true}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # production pipeline wiring (docs/architecture.md)
+      DATABASE_URL: postgres://hash8:${POSTGRES_PASSWORD:-hash8-dev-only}@timescaledb:5432/hash8
+      KAFKA_BROKERS: redpanda:9092
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://minio:9000
+      S3_BUCKET_FIRMWARE: hash8-firmware
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      OTEL_SERVICE_NAME: hash8-api
+    ports:
+      - "4000:4000"
+      - "1883:1883"
+      - "5684:5684/udp"
+    volumes:
+      - apidata:/data
+    logging: *logging
+
+  console:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.console
+      args:
+        NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:4000/api/v1}
+    image: hash8/console:dev
+    restart: unless-stopped
+    depends_on:
+      api: { condition: service_healthy }
+    ports: ["3100:3100"]
+    logging: *logging
+
+volumes:
+  pgdata:
+  redpanda:
+  redis:
+  minio:
+  apidata:

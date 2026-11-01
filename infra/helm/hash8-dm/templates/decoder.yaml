@@ -1,0 +1,135 @@
+{{- if .Values.decoder.enabled }}
+{{- $c := .Values.decoder }}
+# Decoder consumer group (stateless): raw.v1 → codec (cache keyed codecId@version)
+#   → decoded.v1 | unknown.v1 | dlq.v1, batched Timescale inserts, Redis shadow updates.
+# Scaling: the useful ceiling is the raw.v1 partition count. CPU-based HPA is the default;
+# in production enable `decoder.keda` (Kafka consumer-group lag) and disable the HPA,
+# since lag reacts before CPU does when a burst lands.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "hash8-dm.fullname" . }}-decoder
+  labels:
+    {{- include "hash8-dm.labels" . | nindent 4 }}
+    app.kubernetes.io/component: decoder
+spec:
+  {{- if not (or $c.hpa.enabled $c.keda.enabled) }}
+  replicas: {{ $c.replicas }}
+  {{- end }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    # every replacement triggers a consumer-group rebalance — one at a time
+    rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }
+  selector:
+    matchLabels:
+      {{- include "hash8-dm.selector" (dict "root" . "component" "decoder") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "hash8-dm.labels" . | nindent 8 }}
+        app.kubernetes.io/component: decoder
+      annotations:
+        {{- include "hash8-dm.podAnnotations" . | nindent 8 }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ $c.metricsPort | quote }}
+    spec:
+      serviceAccountName: {{ include "hash8-dm.serviceAccountName" . }}
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      # finish the in-flight batch and commit offsets before exit
+      terminationGracePeriodSeconds: 45
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "hash8-dm.selector" (dict "root" . "component" "decoder") | nindent 14 }}
+      containers:
+        - name: decoder
+          image: {{ include "hash8-dm.image" (dict "root" . "which" "api") }}
+          imagePullPolicy: {{ .Values.image.api.pullPolicy }}
+          securityContext: {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          env:
+            {{- include "hash8-dm.apiEnv" (dict "root" . "role" "decoder") | nindent 12 }}
+            - name: TRANSPORTS
+              value: "false"
+            - name: TICKERS
+              value: "false"
+            - name: METRICS_PORT
+              value: {{ $c.metricsPort | quote }}
+            - name: UV_THREADPOOL_SIZE
+              value: "8"
+          envFrom:
+            {{- include "hash8-dm.apiEnvFrom" . | nindent 12 }}
+          ports:
+            - { name: metrics, containerPort: {{ $c.metricsPort }}, protocol: TCP }
+          livenessProbe:
+            tcpSocket: { port: metrics }
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources: {{- toYaml $c.resources | nindent 12 }}
+          volumeMounts:
+            {{- include "hash8-dm.tmpMounts" . | nindent 12 }}
+      volumes:
+        {{- include "hash8-dm.tmpVolumes" . | nindent 8 }}
+      {{- with $c.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $c.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- if and $c.hpa.enabled (not $c.keda.enabled) }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "hash8-dm.fullname" . }}-decoder
+  labels:
+    {{- include "hash8-dm.labels" . | nindent 4 }}
+  annotations:
+    hash8.io/note: "CPU is a lagging signal for a Kafka consumer. Prefer decoder.keda (consumer lag on raw.v1)."
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: {{ include "hash8-dm.fullname" . }}-decoder }
+  minReplicas: {{ $c.hpa.minReplicas }}
+  maxReplicas: {{ $c.hpa.maxReplicas }}
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies: [{ type: Percent, value: 100, periodSeconds: 60 }]
+    scaleDown:
+      stabilizationWindowSeconds: 600
+      policies: [{ type: Pods, value: 2, periodSeconds: 120 }]
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: {{ $c.hpa.targetCPU }} } }
+{{- end }}
+{{- if $c.keda.enabled }}
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "hash8-dm.fullname" . }}-decoder
+  labels:
+    {{- include "hash8-dm.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef: { name: {{ include "hash8-dm.fullname" . }}-decoder }
+  minReplicaCount: {{ $c.keda.minReplicas }}
+  maxReplicaCount: {{ $c.keda.maxReplicas }}
+  cooldownPeriod: 300
+  triggers:
+    - type: kafka
+      metadata:
+        bootstrapServers: {{ .Values.externalServices.kafkaBrokers | quote }}
+        consumerGroup: hash8-decoder
+        topic: {{ .Values.topics.raw | quote }}
+        lagThreshold: {{ $c.keda.lagThreshold | quote }}
+        allowIdleConsumers: "false"   # never scale beyond partition count
+    - type: cpu
+      metricType: Utilization
+      metadata: { value: {{ $c.hpa.targetCPU | quote }} }
+{{- end }}
+{{- end }}

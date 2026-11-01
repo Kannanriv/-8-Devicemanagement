@@ -1,0 +1,12 @@
+#8 Device Management {{ .Chart.AppVersion }} deployed as "{{ .Release.Name }}".
+
+  Console : https://{{ .Values.global.consoleHost }}
+  API     : https://{{ .Values.global.apiHost }}/api/v1
+  Devices : mqtts://{{ .Values.global.mqttHost }}:8883 · udp {{ .Values.global.mqttHost }}:5684
+            (kubectl get svc {{ include "hash8-dm.fullname" . }}-ingest for the LB address)
+
+Decoder autoscaling: {{ if .Values.decoder.keda.enabled }}KEDA on Kafka lag ({{ .Values.topics.raw }}){{ else }}CPU HPA. Enable decoder.keda for lag-based scaling{{ end }}.
+{{- if and .Values.secrets.create (not .Values.secrets.existingSecret) }}
+
+WARNING: using the placeholder Secret from values.yaml. Set secrets.existingSecret for production.
+{{- end }}

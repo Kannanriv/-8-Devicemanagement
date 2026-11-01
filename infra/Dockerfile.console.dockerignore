@@ -1,0 +1,13 @@
+**/node_modules
+**/.next
+**/.next-*
+**/.turbo
+**/dist
+**/coverage
+**/data
+**/*.log
+**/.env
+**/.env.*
+.git
+infra/helm
+infra/k6

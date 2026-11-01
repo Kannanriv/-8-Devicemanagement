@@ -1,0 +1,104 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  TURBO_TELEMETRY_DISABLED: 1
+  NEXT_TELEMETRY_DISABLED: 1
+  CI: true
+
+jobs:
+  check:
+    name: typecheck + test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Turbo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: turbo-${{ runner.os }}-
+      - name: Typecheck (every workspace)
+        run: npx turbo run typecheck --cache-dir=.turbo --continue
+      - name: Test (every workspace)
+        # AI agents fall back to deterministic offline mode without ANTHROPIC_API_KEY
+        run: npx turbo run test --cache-dir=.turbo --continue
+
+  console:
+    name: console build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - uses: actions/cache@v4
+        with:
+          path: apps/console/.next/cache
+          key: next-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
+          restore-keys: next-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
+      - run: npm run build -w @hash8/console
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:4000/api/v1
+
+  simulator-bench:
+    name: decode bench (smoke)
+    runs-on: ubuntu-latest
+    needs: check
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Decode throughput per sample spec
+        run: npm run start -w @hash8/simulator -- --mode bench --bench-seconds 1 | tee bench.txt
+      - run: cat bench.txt >> "$GITHUB_STEP_SUMMARY"
+
+  infra:
+    name: infra lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: docker compose config
+        run: docker compose -f infra/docker-compose.yml config --quiet
+      - uses: azure/setup-helm@v4
+      - name: helm lint + template
+        run: |
+          helm lint infra/helm/hash8-dm
+          helm template ci infra/helm/hash8-dm > /dev/null
+          helm template ci infra/helm/hash8-dm --set decoder.keda.enabled=true,secrets.existingSecret=x > /dev/null
+      - name: hadolint
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: infra/Dockerfile.api
+          failure-threshold: error
+      - name: hadolint console
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: infra/Dockerfile.console
+          failure-threshold: error

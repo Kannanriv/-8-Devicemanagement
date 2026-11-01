@@ -1,0 +1,126 @@
+{{- if .Values.ingest.enabled }}
+{{- $c := .Values.ingest }}
+# Protocol edge. Terminates MQTT(S)/HTTP/UDP, authenticates the device (mTLS CN = serial)
+# and produces raw envelopes to raw.v1 keyed by deviceId. No decoding happens here.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "hash8-dm.fullname" . }}-ingest
+  labels:
+    {{- include "hash8-dm.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ingest
+spec:
+  {{- if not $c.hpa.enabled }}
+  replicas: {{ $c.replicas }}
+  {{- end }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    # MQTT clients reconnect on pod loss; roll one pod at a time to avoid reconnect storms.
+    rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }
+  selector:
+    matchLabels:
+      {{- include "hash8-dm.selector" (dict "root" . "component" "ingest") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "hash8-dm.labels" . | nindent 8 }}
+        app.kubernetes.io/component: ingest
+      annotations:
+        {{- include "hash8-dm.podAnnotations" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "hash8-dm.serviceAccountName" . }}
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      # time to drain MQTT sessions (DISCONNECT reason 0x8B "server shutting down")
+      terminationGracePeriodSeconds: 60
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              {{- include "hash8-dm.selector" (dict "root" . "component" "ingest") | nindent 14 }}
+      containers:
+        - name: ingest
+          image: {{ include "hash8-dm.image" (dict "root" . "which" "api") }}
+          imagePullPolicy: {{ .Values.image.api.pullPolicy }}
+          securityContext: {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          env:
+            {{- include "hash8-dm.apiEnv" (dict "root" . "role" "ingest") | nindent 12 }}
+            - name: TRANSPORTS
+              value: "true"
+            - name: TICKERS
+              value: "false"
+          envFrom:
+            {{- include "hash8-dm.apiEnvFrom" . | nindent 12 }}
+          ports:
+            - { name: http, containerPort: {{ $c.ports.http }}, protocol: TCP }
+            - { name: mqtt, containerPort: {{ $c.ports.mqtt }}, protocol: TCP }
+            - { name: mqtts, containerPort: {{ $c.ports.mqtts }}, protocol: TCP }
+            - { name: udp, containerPort: {{ $c.ports.udp }}, protocol: UDP }
+          readinessProbe:
+            tcpSocket: { port: mqtt }
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: { port: http }
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources: {{- toYaml $c.resources | nindent 12 }}
+          volumeMounts:
+            {{- include "hash8-dm.tmpMounts" . | nindent 12 }}
+      volumes:
+        {{- include "hash8-dm.tmpVolumes" . | nindent 8 }}
+      {{- with $c.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $c.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "hash8-dm.fullname" . }}-ingest
+  labels:
+    {{- include "hash8-dm.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ingest
+  {{- with $c.service.annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ $c.service.type }}
+  {{- if ne $c.service.type "ClusterIP" }}
+  externalTrafficPolicy: {{ $c.service.externalTrafficPolicy }}
+  {{- end }}
+  selector:
+    {{- include "hash8-dm.selector" (dict "root" . "component" "ingest") | nindent 4 }}
+  ports:
+    - { name: http, port: 80, targetPort: http, protocol: TCP }
+    - { name: mqtt, port: 1883, targetPort: mqtt, protocol: TCP }
+    - { name: mqtts, port: 8883, targetPort: mqtts, protocol: TCP }
+    - { name: udp, port: 5684, targetPort: udp, protocol: UDP }
+{{- if $c.hpa.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "hash8-dm.fullname" . }}-ingest
+  labels:
+    {{- include "hash8-dm.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: {{ include "hash8-dm.fullname" . }}-ingest }
+  minReplicas: {{ $c.hpa.minReplicas }}
+  maxReplicas: {{ $c.hpa.maxReplicas }}
+  behavior:
+    scaleDown:
+      # scale-in drops MQTT sessions, so scale in slowly
+      stabilizationWindowSeconds: 900
+      policies: [{ type: Pods, value: 1, periodSeconds: 300 }]
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: {{ $c.hpa.targetCPU }} } }
+{{- end }}
+{{- end }}

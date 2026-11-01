@@ -1,0 +1,113 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $np := .Values.networkPolicy }}
+# Default-deny for the release, then explicit allows:
+#   ingress-controller → api, console · internet → ingest (device traffic)
+#   monitoring → metrics · pods → DNS, Postgres, Kafka, Redis, S3/HTTPS, OTLP
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "hash8-dm.fullname" . }}-default-deny
+  labels:
+    {{- include "hash8-dm.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "hash8-dm.fullname" . }}-api-console
+  labels:
+    {{- include "hash8-dm.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchExpressions:
+      - { key: app.kubernetes.io/instance, operator: In, values: [{{ .Release.Name | quote }}] }
+      - { key: app.kubernetes.io/component, operator: In, values: [api, console] }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: {{ $np.ingressControllerNamespace | quote }} }
+    # console server-side rendering → api
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "hash8-dm.selector" (dict "root" . "component" "console") | nindent 14 }}
+      ports:
+        - { port: {{ .Values.api.port }}, protocol: TCP }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "hash8-dm.fullname" . }}-ingest-devices
+  labels:
+    {{- include "hash8-dm.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "hash8-dm.selector" (dict "root" . "component" "ingest") | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    # devices connect from anywhere; authentication is mTLS / device credentials
+    - ports:
+        - { port: {{ .Values.ingest.ports.mqtt }}, protocol: TCP }
+        - { port: {{ .Values.ingest.ports.mqtts }}, protocol: TCP }
+        - { port: {{ .Values.ingest.ports.udp }}, protocol: UDP }
+        - { port: {{ .Values.ingest.ports.http }}, protocol: TCP }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "hash8-dm.fullname" . }}-monitoring
+  labels:
+    {{- include "hash8-dm.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: {{ $np.monitoringNamespace | quote }} }
+      ports:
+        - { port: {{ .Values.decoder.metricsPort }}, protocol: TCP }
+        - { port: {{ .Values.api.port }}, protocol: TCP }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "hash8-dm.fullname" . }}-egress
+  labels:
+    {{- include "hash8-dm.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes: [Egress]
+  egress:
+    - ports:
+        - { port: 53, protocol: UDP }
+        - { port: 53, protocol: TCP }
+    # in-release traffic (console → api)
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+    - ports:
+        - { port: 5432, protocol: TCP }   # Timescale
+        - { port: 9092, protocol: TCP }   # Kafka
+        - { port: 9093, protocol: TCP }   # Kafka TLS
+        - { port: 6379, protocol: TCP }   # Redis
+        - { port: 443, protocol: TCP }    # S3, Anthropic API, webhooks/integrations
+        - { port: 4317, protocol: TCP }   # OTLP gRPC
+      {{- with $np.egressCIDRs }}
+      to:
+        {{- range . }}
+        - ipBlock: { cidr: {{ . | quote }} }
+        {{- end }}
+      {{- end }}
+{{- end }}

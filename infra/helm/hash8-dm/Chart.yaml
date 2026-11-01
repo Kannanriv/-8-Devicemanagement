@@ -1,0 +1,16 @@
+apiVersion: v2
+name: hash8-dm
+description: "#8 Device Management — operations-driven IoT device management (API, protocol ingest, decoder workers, console)."
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.27.0-0"
+keywords: [iot, device-management, mqtt, lorawan, ota, codec]
+home: https://hash8.io
+maintainers:
+  - name: hash8 platform team
+annotations:
+  # Stateful dependencies are NOT bundled: run Timescale (e.g. Timescale Cloud or the
+  # timescaledb-ha operator), Kafka/Redpanda, Redis and S3 as managed services and point
+  # values.externalServices at them.
+  hash8.io/dependencies: "timescaledb>=2.15 (pg16), kafka-compatible bus, redis>=7, s3"

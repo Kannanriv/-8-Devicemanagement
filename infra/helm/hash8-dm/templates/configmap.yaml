@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "hash8-dm.fullname" . }}-config
+  labels:
+    {{- include "hash8-dm.labels" . | nindent 4 }}
+data:
+  HOST: "0.0.0.0"
+  PORT: {{ .Values.api.port | quote }}
+  MQTT_PORT: {{ .Values.ingest.ports.mqtt | quote }}
+  UDP_PORT: {{ .Values.ingest.ports.udp | quote }}
+  DATA_DIR: /data
+  LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+  SEED: {{ .Values.config.seed | quote }}
+  SIM_TRAFFIC: {{ .Values.config.simTraffic | quote }}
+  CONSOLE_ORIGINS: {{ printf "https://%s" .Values.global.consoleHost | quote }}
+  KAFKA_BROKERS: {{ .Values.externalServices.kafkaBrokers | quote }}
+  KAFKA_TLS: {{ .Values.externalServices.kafkaTls | quote }}
+  KAFKA_TOPIC_RAW: {{ .Values.topics.raw | quote }}
+  KAFKA_TOPIC_DECODED: {{ .Values.topics.decoded | quote }}
+  KAFKA_TOPIC_UNKNOWN: {{ .Values.topics.unknown | quote }}
+  KAFKA_TOPIC_COMMANDS: {{ .Values.topics.commands | quote }}
+  KAFKA_TOPIC_OTA: {{ .Values.topics.ota | quote }}
+  KAFKA_TOPIC_SHADOW: {{ .Values.topics.shadow | quote }}
+  KAFKA_TOPIC_DLQ: {{ .Values.topics.dlq | quote }}
+  KAFKA_DECODER_GROUP: hash8-decoder
+  REDIS_URL: {{ .Values.externalServices.redisUrl | quote }}
+  S3_ENDPOINT: {{ .Values.externalServices.s3Endpoint | quote }}
+  S3_REGION: {{ .Values.externalServices.s3Region | quote }}
+  S3_BUCKET_FIRMWARE: {{ .Values.externalServices.firmwareBucket | quote }}
+  S3_BUCKET_RAW_ARCHIVE: {{ .Values.externalServices.rawArchiveBucket | quote }}
+  PIPELINE_CONCURRENCY: {{ .Values.config.decoderConcurrency | quote }}
+  CODEC_CACHE_SIZE: {{ .Values.config.codecCacheSize | quote }}
+  OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.externalServices.otelEndpoint | quote }}
+  {{- with .Values.config.agentModel }}
+  HASH8_AGENT_MODEL: {{ . | quote }}
+  {{- end }}

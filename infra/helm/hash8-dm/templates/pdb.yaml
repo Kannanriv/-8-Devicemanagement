@@ -1,0 +1,22 @@
+{{- range $name := list "api" "ingest" "decoder" "console" }}
+{{- $c := index $.Values $name }}
+{{- if and $c.enabled $c.pdb }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "hash8-dm.fullname" $ }}-{{ $name }}
+  labels:
+    {{- include "hash8-dm.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $name }}
+spec:
+  {{- if hasKey $c.pdb "minAvailable" }}
+  minAvailable: {{ $c.pdb.minAvailable }}
+  {{- else }}
+  maxUnavailable: {{ $c.pdb.maxUnavailable | default 1 }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "hash8-dm.selector" (dict "root" $ "component" $name) | nindent 6 }}
+{{- end }}
+{{- end }}

@@ -1,0 +1,35 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "hash8-dm.fullname" . }}
+  labels:
+    {{- include "hash8-dm.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls }}
+  tls:
+    - hosts: [{{ .Values.global.apiHost | quote }}, {{ .Values.global.consoleHost | quote }}]
+      secretName: {{ include "hash8-dm.fullname" . }}-tls
+  {{- end }}
+  rules:
+    - host: {{ .Values.global.apiHost | quote }}
+      http:
+        paths:
+          # device HTTP ingest goes to the edge tier, everything else to the API
+          - path: /api/v1/ingest
+            pathType: Prefix
+            backend: { service: { name: {{ include "hash8-dm.fullname" . }}-ingest, port: { name: http } } }
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: {{ include "hash8-dm.fullname" . }}-api, port: { name: http } } }
+    - host: {{ .Values.global.consoleHost | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: {{ include "hash8-dm.fullname" . }}-console, port: { name: http } } }
+{{- end }}
